@@ -6,6 +6,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raylib Memory Game</title>
     <style>
+        /* Leaderboard Styles */
+        #leaderboard {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #00aeef;
+            width: 200px;
+            /* display: none; is removed here, we show it via JS when loaded */
+        }
+        #leaderboard h3 { margin: 0 0 10px 0; color: #00aeef; text-align: center; }
+        #score-list { list-style: none; padding: 0; margin: 0; }
+        #score-list li { 
+            padding: 5px; 
+            border-bottom: 1px solid #444; 
+            display: flex; 
+            justify-content: space-between;
+            color: #fff; /* Ensure text is visible */
+        }
+        #score-list li:last-child { border-bottom: none; }
+        .score-val { color: #ffd700; font-weight: bold; }
+
         body { 
             margin: 0; 
             padding: 0; 
@@ -21,7 +45,7 @@
         #canvas {
             border-radius: 8px;
             box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            image-rendering: pixelated; /* Optional: for crisp pixel art look */
+            image-rendering: pixelated;
         }
         .spinner {
             height: 30px;
@@ -47,10 +71,15 @@
     </style>
   </head>
   <body>
-    <!-- Loading Spinner -->
     <div class="spinner" id='spinner'></div>
     
-    <!-- Game Canvas -->
+    <div id="leaderboard">
+        <h3>Global Leaders</h3>
+        <ul id="score-list">
+            <li style="justify-content:center; color:#888;">Loading...</li>
+        </ul>
+    </div>
+
     <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
     
     <script type='text/javascript'>
@@ -60,10 +89,7 @@
             console.log(text);
           };
         })(),
-        canvas: (function() {
-          var canvas = document.getElementById('canvas');
-          return canvas;
-        })(),
+        canvas: document.getElementById('canvas'),
         setStatus: function(text) {
           if (!text) return;
           console.log("Status: " + text);
@@ -75,6 +101,73 @@
             document.getElementById('canvas').focus();
         }
       };
+
+      // --- DREAMLO CONFIGURATION ---
+      // These keys look valid, but always confirm them on dreamlo.com
+      const PRIVATE_KEY = "FmD-OFRIfUiqAQRcOJfgIwXF4CTJUP2kyktm0h6ad4eQ"; 
+      const PUBLIC_KEY  = "692222898f40bb186436a661";  
+      const BASE_URL = "http://www.dreamlo.com/lb/";
+
+      // 1. Fetch Scores from the Cloud
+      function renderScores() {
+          const list = document.getElementById('score-list');
+          if (!list) return;
+
+          // '/json-asc' sorts for the lowest score being the best (ideal for moves/time)
+          fetch(`${BASE_URL}${PUBLIC_KEY}/json-asc`)
+              .then(response => response.json())
+              .then(data => {
+                  list.innerHTML = '';
+                  if (!data.dreamlo.leaderboard) {
+                      list.innerHTML = '<li style="color:#888;">No scores yet!</li>';
+                      return;
+                  }
+                  let entries = data.dreamlo.leaderboard.entry;
+                  if (!Array.isArray(entries)) { entries = [entries]; }
+                  const topScores = entries.slice(0, 5);
+
+                  topScores.forEach((entry, index) => {
+                      const li = document.createElement('li');
+                      li.innerHTML = `
+                        <span>#${index + 1} ${entry.name.substring(0, 10)}</span> 
+                        <span class="score-val">${entry.score}</span>
+                      `;
+                      list.appendChild(li);
+                  });
+              })
+              .catch(err => {
+                  console.error("Error fetching scores:", err);
+                  list.innerHTML = '<li style="color:red;">Offline</li>';
+              });
+      }
+
+      // 2. Send Score to the Cloud (Called by C++)
+      window.updateLeaderboard = function(score) {
+          // Ask the player for their name using the browser's native popup
+          let playerName = prompt("New Record! Enter your name (Max 10 chars):", "Guest");
+
+          // Basic cleanup
+          if (!playerName) playerName = "Guest";
+          playerName = playerName.replace(/[^a-zA-Z0-9]/g, ""); 
+          if (playerName.length > 10) playerName = playerName.substring(0, 10);
+
+          // Send to Dreamlo: URL/Private/Add/Name/Score/Seconds
+          const url = `${BASE_URL}${PRIVATE_KEY}/add/${playerName}/${score}/0`;
+
+          fetch(url)
+              .then(() => { 
+                // After submitting, refresh the display
+                renderScores(); 
+              })
+              .catch(err => console.error("Error sending score:", err));
+      };
+
+      // Load scores immediately on startup
+      var lb = document.getElementById('leaderboard');
+      if(lb) {
+          lb.style.display = 'block';
+          renderScores();
+      }
     </script>
     {{{ SCRIPT }}}
   </body>

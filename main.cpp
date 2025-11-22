@@ -9,6 +9,23 @@
     #include <emscripten/emscripten.h>
 #endif
 
+#if defined(PLATFORM_WEB)
+    EM_JS(void, SaveScoreToBrowser, (int score), {
+        // This is JAVASCRIPT code running inside your C++ file!
+        // We call a function defined in index.html (we will write this next)
+        if (typeof window.updateLeaderboard === 'function') {
+            window.updateLeaderboard(score);
+        } else {
+            console.log("Leaderboard function not found in HTML");
+        }
+    });
+#else
+    // Fallback for non-web builds so it compiles
+    void SaveScoreToBrowser(int score) { 
+        printf("Game Over! Score: %i\n", score); 
+    }
+#endif
+
 // --- Constants & Config ---
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
@@ -164,6 +181,7 @@ void UpdateDrawFrame() {
                     matchesFound++;
                     if (matchesFound >= (COLS * ROWS) / 2) {
                         currentState = STATE_GAMEOVER;
+                        SaveScoreToBrowser(moves);
                     } else {
                         currentState = STATE_PLAYING;
                     }

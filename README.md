@@ -26,4 +26,4 @@ em++ -o index.html main.cpp -Os -Wall -I /mnt/c/Users/jk/Documents/memory/emsdk/
 
 emrun index.html
 
-Enter this link into your browser:http://172.27.158.184:6931/game.html
+Enter this link into your browser: http://172.27.158.184:6931/index.html
