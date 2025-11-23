@@ -4,36 +4,39 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raylib Memory Game</title>
+    <title>Raylib Memory - Hard Mode</title>
     <style>
         /* Leaderboard Styles */
         #leaderboard {
             position: absolute;
             top: 20px;
             right: 20px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.85);
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #00aeef;
-            width: 200px;
-            /* display: none; is removed here, we show it via JS when loaded */
+            width: 220px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            font-family: monospace;
         }
-        #leaderboard h3 { margin: 0 0 10px 0; color: #00aeef; text-align: center; }
+        #leaderboard h3 { margin: 0 0 10px 0; color: #00aeef; text-align: center; font-family: sans-serif; }
         #score-list { list-style: none; padding: 0; margin: 0; }
         #score-list li { 
-            padding: 5px; 
+            padding: 6px; 
             border-bottom: 1px solid #444; 
             display: flex; 
             justify-content: space-between;
-            color: #fff; /* Ensure text is visible */
+            color: #ccc;
+            font-size: 14px;
         }
         #score-list li:last-child { border-bottom: none; }
         .score-val { color: #ffd700; font-weight: bold; }
+        .score-label { font-size: 10px; color: #666; vertical-align: middle; margin-left: 4px; }
 
         body { 
             margin: 0; 
             padding: 0; 
-            background-color: #222; 
+            background-color: #111; 
             color: #fff;
             font-family: sans-serif;
             display: flex;
@@ -41,11 +44,14 @@
             align-items: center;
             justify-content: center;
             height: 100vh;
+            overflow: hidden; /* Prevent scrolling if canvas gets big */
         }
         #canvas {
-            border-radius: 8px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.6);
             image-rendering: pixelated;
+            max-width: 100%;
+            max-height: 100%;
         }
         .spinner {
             height: 30px;
@@ -74,7 +80,7 @@
     <div class="spinner" id='spinner'></div>
     
     <div id="leaderboard">
-        <h3>Global Leaders</h3>
+        <h3>Best Moves</h3>
         <ul id="score-list">
             <li style="justify-content:center; color:#888;">Loading...</li>
         </ul>
@@ -95,25 +101,24 @@
           console.log("Status: " + text);
         },
         onRuntimeInitialized: function() {
-            // Hide spinner when loaded
             document.getElementById('spinner').style.display = 'none';
-            // Focus canvas for input
             document.getElementById('canvas').focus();
         }
       };
 
       // --- DREAMLO CONFIGURATION ---
-      // These keys look valid, but always confirm them on dreamlo.com
+      // NOTE: Ensure your dreamlo keys are still valid
       const PRIVATE_KEY = "FmD-OFRIfUiqAQRcOJfgIwXF4CTJUP2kyktm0h6ad4eQ"; 
       const PUBLIC_KEY  = "692222898f40bb186436a661";  
       const BASE_URL = "https://www.dreamlo.com/lb/";
 
-      // 1. Fetch Scores from the Cloud
+      // 1. Fetch Scores
       function renderScores() {
           const list = document.getElementById('score-list');
           if (!list) return;
 
-          // '/json-asc' sorts for the lowest score being the best (ideal for moves/time)
+          // '/json-asc' -> Sorts ASCENDING (Lowest score is #1). 
+          // Perfect for "Moves" count.
           fetch(`${BASE_URL}${PUBLIC_KEY}/json-asc`)
               .then(response => response.json())
               .then(data => {
@@ -130,7 +135,10 @@
                       const li = document.createElement('li');
                       li.innerHTML = `
                         <span>#${index + 1} ${entry.name.substring(0, 10)}</span> 
-                        <span class="score-val">${entry.score}</span>
+                        <div>
+                            <span class="score-val">${entry.score}</span>
+                            <span class="score-label">moves</span>
+                        </div>
                       `;
                       list.appendChild(li);
                   });
@@ -141,33 +149,29 @@
               });
       }
 
-      // --- New Function for C++ to call on start ---
+      // C++ Calls this on startup/reset
       window.refreshLeaderboard = function() {
           renderScores();
       }
 
-      // 2. Send Score to the Cloud (Called by C++)
+      // C++ Calls this on Game Over
       window.updateLeaderboard = function(score) {
-          // Ask the player for their name using the browser's native popup
-          let playerName = prompt("New Record! Enter your name (Max 10 chars):", "Guest");
-
-          // Basic cleanup
-          if (!playerName) playerName = "Guest";
+          let playerName = prompt(`You won in ${score} moves! Enter name:`, "Player");
+          if (!playerName) return; // Cancelled
+          
           playerName = playerName.replace(/[^a-zA-Z0-9]/g, ""); 
           if (playerName.length > 10) playerName = playerName.substring(0, 10);
+          if (playerName.length === 0) playerName = "Guest";
 
-          // Send to Dreamlo: URL/Private/Add/Name/Score/Seconds
+          // URL: /add/Name/Score/Seconds/Text
           const url = `${BASE_URL}${PRIVATE_KEY}/add/${playerName}/${score}/0`;
 
           fetch(url)
-              .then(() => { 
-                // After submitting, refresh the display
-                renderScores(); 
-              })
+              .then(() => { renderScores(); })
               .catch(err => console.error("Error sending score:", err));
       };
 
-      // Load scores immediately on startup
+      // Initial Load
       var lb = document.getElementById('leaderboard');
       if(lb) {
           lb.style.display = 'block';

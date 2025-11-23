@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <random>
 #include <string>
+#include <map>
 
 // Required for Web assembly compilation
 #if defined(PLATFORM_WEB)
@@ -11,8 +12,6 @@
 
 #if defined(PLATFORM_WEB)
     EM_JS(void, SaveScoreToBrowser, (int score), {
-        // This is JAVASCRIPT code running inside your C++ file!
-        // We call a function defined in index.html (we will write this next)
         if (typeof window.updateLeaderboard === 'function') {
             window.updateLeaderboard(score);
         } else {
@@ -27,70 +26,77 @@
         }
     });
 #else
-    // Fallback for non-web builds so it compiles
     void SaveScoreToBrowser(int score) { 
         printf("Game Over! Score: %i\n", score); 
     }
-    // *** NEW ADDITION ***
-    void RefreshLeaderboard() { 
-        // No action needed for non-web build
-    }
+    void RefreshLeaderboard() { }
 #endif
 
 // --- Constants & Config ---
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 600;
-const int COLS = 4;
-const int ROWS = 4;
-const int CARD_SIZE = 100;
-const int CARD_SPACING = 20;
-const int GRID_OFFSET_X = (SCREEN_WIDTH - ((COLS * CARD_SIZE) + ((COLS - 1) * CARD_SPACING))) / 2;
-const int GRID_OFFSET_Y = (SCREEN_HEIGHT - ((ROWS * CARD_SIZE) + ((ROWS - 1) * CARD_SPACING))) / 2;
+const int CARD_SIZE = 90; // Slightly smaller to fit 5x5 comfortably
+const int CARD_SPACING = 15;
 
-// --- Colors for pairs ---
+// --- Colors for pairs (Expanded for Hard Mode) ---
 const Color CARD_COLORS[] = {
-    RED, ORANGE, YELLOW, GREEN, SKYBLUE, BLUE, PURPLE, PINK
+    RED, ORANGE, YELLOW, GREEN, SKYBLUE, BLUE, PURPLE, PINK,
+    LIME, GOLD, MAROON, DARKBLUE // Added more colors for 12 pairs
 };
 
 // --- Game State ---
 enum GameState {
     STATE_MENU,
     STATE_PLAYING,
-    STATE_WAITING, // Waiting for 2nd card animation/check
+    STATE_WAITING, 
     STATE_GAMEOVER
+};
+
+enum Difficulty {
+    DIFF_MEDIUM, // 4x4
+    DIFF_HARD    // 5x5
 };
 
 struct Card {
     Rectangle rect;
     Color color;
     int id;       // Matches another card with same ID
+    int gridIndex; // To track unique position
     bool flipped;
     bool matched;
+    bool active;  // False for the empty center slot in 5x5
 };
 
 // --- Globals ---
 std::vector<Card> cards;
 GameState currentState = STATE_MENU;
+Difficulty currentDifficulty = DIFF_MEDIUM;
+
 Card* firstSelection = nullptr;
 Card* secondSelection = nullptr;
+
+// Stats
 double waitTimer = 0.0;
 int matchesFound = 0;
 int moves = 0;
+int errors = 0;
+int totalPairs = 0;
+
+// Memory Tracking for Errors
+std::vector<bool> cardSeen; // Tracks if a specific grid index has been revealed
 
 // --- Function Prototypes ---
 void InitGame();
+void StartGame(Difficulty diff);
 void UpdateDrawFrame(void);
 void DrawCard(const Card& card);
-void ResetGame();
 
 // --- Main Entry Point ---
 int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Raylib Web Memory Game");
-
     InitGame();
 
 #if defined(PLATFORM_WEB)
-    // Emscripten requires this specific main loop callback
     emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
     SetTargetFPS(60);
@@ -105,75 +111,114 @@ int main() {
 
 // --- Game Logic ---
 
-void ResetGame() {
+void InitGame() {
+    currentState = STATE_MENU;
+}
+
+void StartGame(Difficulty diff) {
     cards.clear();
     matchesFound = 0;
     moves = 0;
+    errors = 0;
     firstSelection = nullptr;
     secondSelection = nullptr;
+    currentDifficulty = diff;
     currentState = STATE_PLAYING;
 
-    // *** NEW ADDITION: Refresh Leaderboard on game reset ***
-    #if defined(PLATFORM_WEB)
-        RefreshLeaderboard();
-    #endif
+    int rows = (diff == DIFF_MEDIUM) ? 4 : 5;
+    int cols = (diff == DIFF_MEDIUM) ? 4 : 5;
+    
+    // In 5x5, we have 25 slots. We use 24 cards (12 pairs) and leave center empty.
+    int totalSlots = rows * cols;
+    totalPairs = (diff == DIFF_MEDIUM) ? 8 : 12;
 
-    // Create pairs
+    // Reset memory tracker
+    cardSeen.assign(totalSlots, false);
+
+    // Create IDs
     std::vector<int> ids;
-    for (int i = 0; i < (COLS * ROWS) / 2; i++) {
+    for (int i = 0; i < totalPairs; i++) {
         ids.push_back(i);
         ids.push_back(i);
     }
 
-    // Shuffle
+    // Shuffle IDs
     std::random_device rd;
     std::mt19937 g(rd());
     std::shuffle(ids.begin(), ids.end(), g);
 
+    // Calculate centering offsets
+    int gridWidth = (cols * CARD_SIZE) + ((cols - 1) * CARD_SPACING);
+    int gridHeight = (rows * CARD_SIZE) + ((rows - 1) * CARD_SPACING);
+    int offsetX = (SCREEN_WIDTH - gridWidth) / 2;
+    int offsetY = (SCREEN_HEIGHT - gridHeight) / 2;
+
     // Build Grid
-    int idIndex = 0;
-    for (int y = 0; y < ROWS; y++) {
-        for (int x = 0; x < COLS; x++) {
+    int idCounter = 0;
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
             Card c;
             c.rect = {
-                (float)(GRID_OFFSET_X + x * (CARD_SIZE + CARD_SPACING)),
-                (float)(GRID_OFFSET_Y + y * (CARD_SIZE + CARD_SPACING)),
+                (float)(offsetX + x * (CARD_SIZE + CARD_SPACING)),
+                (float)(offsetY + y * (CARD_SIZE + CARD_SPACING)),
                 (float)CARD_SIZE,
                 (float)CARD_SIZE
             };
-            c.id = ids[idIndex];
-            c.color = CARD_COLORS[c.id % 8]; // Map ID to color
+            c.gridIndex = (y * cols) + x;
             c.flipped = false;
             c.matched = false;
+            
+            // Handle 5x5 center empty slot
+            bool isCenter = (diff == DIFF_HARD && x == 2 && y == 2);
+            
+            if (isCenter) {
+                c.active = false;
+                c.id = -1;
+                c.color = DARKGRAY;
+            } else {
+                c.active = true;
+                c.id = ids[idCounter++];
+                c.color = CARD_COLORS[c.id % 12]; 
+            }
+
             cards.push_back(c);
-            idIndex++;
         }
     }
-}
 
-void InitGame() {
-    ResetGame();
-    currentState = STATE_MENU; // Start at menu
+    #if defined(PLATFORM_WEB)
+        RefreshLeaderboard();
+    #endif
 }
 
 void UpdateDrawFrame() {
-    // --- UPDATE ---
     Vector2 mousePos = GetMousePosition();
     bool clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
 
+    // --- UPDATE ---
     switch (currentState) {
         case STATE_MENU:
             if (clicked) {
-                ResetGame();
-                currentState = STATE_PLAYING;
+                // Simple button collision logic for Menu
+                Rectangle btnMedium = { SCREEN_WIDTH/2 - 100, 250, 200, 50 };
+                Rectangle btnHard = { SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+
+                if (CheckCollisionPointRec(mousePos, btnMedium)) {
+                    StartGame(DIFF_MEDIUM);
+                } else if (CheckCollisionPointRec(mousePos, btnHard)) {
+                    StartGame(DIFF_HARD);
+                }
             }
             break;
 
         case STATE_PLAYING:
             if (clicked) {
                 for (auto& card : cards) {
+                    // Ignore inactive cards (center slot in 5x5)
+                    if (!card.active) continue;
+
                     if (!card.matched && !card.flipped && CheckCollisionPointRec(mousePos, card.rect)) {
                         card.flipped = true;
+                        cardSeen[card.gridIndex] = true; // Mark this location as "Seen"
                         
                         if (!firstSelection) {
                             firstSelection = &card;
@@ -183,25 +228,60 @@ void UpdateDrawFrame() {
                             currentState = STATE_WAITING;
                             waitTimer = GetTime();
                         }
-                        break; // Only click one at a time
+                        break;
                     }
                 }
             }
             break;
 
         case STATE_WAITING:
-            if (GetTime() - waitTimer > 1.0) { // Wait 1 second
+            if (GetTime() - waitTimer > 0.8) { // 0.8s delay
                 if (firstSelection->id == secondSelection->id) {
+                    // --- MATCH ---
                     firstSelection->matched = true;
                     secondSelection->matched = true;
                     matchesFound++;
-                    if (matchesFound >= (COLS * ROWS) / 2) {
+                    
+                    if (matchesFound >= totalPairs) {
                         currentState = STATE_GAMEOVER;
                         SaveScoreToBrowser(moves);
                     } else {
                         currentState = STATE_PLAYING;
                     }
                 } else {
+                    // --- MISMATCH (Check for Errors) ---
+                    
+                    // ERROR LOGIC:
+                    // If we picked Card A and Card B (mismatch), check if we had 
+                    // PREVIOUSLY seen the partner of A or the partner of B. 
+                    // If we knew where the partner was but didn't pick it, that's an error.
+                    
+                    bool errorDetected = false;
+
+                    // Find partner of first selection
+                    for (const auto& c : cards) {
+                        if (c.active && c.id == firstSelection->id && c.gridIndex != firstSelection->gridIndex) {
+                            // We found the partner in the list. Was it seen before?
+                            // Also ensure the partner isn't the one we just clicked (secondSelection)
+                            if (cardSeen[c.gridIndex] && c.gridIndex != secondSelection->gridIndex) {
+                                errorDetected = true;
+                            }
+                        }
+                    }
+
+                    // Find partner of second selection (if error not already found)
+                    if (!errorDetected) {
+                        for (const auto& c : cards) {
+                            if (c.active && c.id == secondSelection->id && c.gridIndex != secondSelection->gridIndex) {
+                                if (cardSeen[c.gridIndex] && c.gridIndex != firstSelection->gridIndex) {
+                                    errorDetected = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (errorDetected) errors++;
+
                     firstSelection->flipped = false;
                     secondSelection->flipped = false;
                     currentState = STATE_PLAYING;
@@ -213,8 +293,7 @@ void UpdateDrawFrame() {
 
         case STATE_GAMEOVER:
             if (clicked) {
-                ResetGame();
-                currentState = STATE_PLAYING;
+                InitGame(); // Go back to menu
             }
             break;
     }
@@ -224,51 +303,75 @@ void UpdateDrawFrame() {
     ClearBackground(RAYWHITE);
 
     // Draw Background Pattern
-    for(int i=0; i<SCREEN_WIDTH; i+=40) {
-        DrawLine(i, 0, i, SCREEN_HEIGHT, Fade(LIGHTGRAY, 0.3f));
-    }
-    for(int i=0; i<SCREEN_HEIGHT; i+=40) {
-        DrawLine(0, i, SCREEN_WIDTH, i, Fade(LIGHTGRAY, 0.3f));
-    }
+    for(int i=0; i<SCREEN_WIDTH; i+=40) DrawLine(i, 0, i, SCREEN_HEIGHT, Fade(LIGHTGRAY, 0.3f));
+    for(int i=0; i<SCREEN_HEIGHT; i+=40) DrawLine(0, i, SCREEN_WIDTH, i, Fade(LIGHTGRAY, 0.3f));
 
     if (currentState == STATE_MENU) {
-        DrawText("MEMORY GAME", SCREEN_WIDTH/2 - MeasureText("MEMORY GAME", 60)/2, 200, 60, DARKGRAY);
-        DrawText("Click to Start", SCREEN_WIDTH/2 - MeasureText("Click to Start", 30)/2, 300, 30, DARKGRAY);
+        DrawText("MEMORY GAME", SCREEN_WIDTH/2 - MeasureText("MEMORY GAME", 60)/2, 150, 60, DARKGRAY);
+        
+        // Draw Buttons
+        Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
+        Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+        
+        Color medColor = CheckCollisionPointRec(mousePos, btnMedium) ? SKYBLUE : LIGHTGRAY;
+        Color hardColor = CheckCollisionPointRec(mousePos, btnHard) ? PINK : LIGHTGRAY;
+
+        DrawRectangleRec(btnMedium, medColor);
+        DrawRectangleLinesEx(btnMedium, 2, DARKGRAY);
+        DrawText("Medium (4x4)", (int)btnMedium.x + 20, (int)btnMedium.y + 10, 24, DARKGRAY);
+
+        DrawRectangleRec(btnHard, hardColor);
+        DrawRectangleLinesEx(btnHard, 2, DARKGRAY);
+        DrawText("Hard (5x5)", (int)btnHard.x + 35, (int)btnHard.y + 10, 24, DARKGRAY);
     } 
     else if (currentState == STATE_GAMEOVER) {
-        DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 200, 60, GOLD);
-        const char* movesText = TextFormat("Moves: %i", moves);
-        DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 30)/2, 280, 30, DARKGRAY);
-        DrawText("Click to Play Again", SCREEN_WIDTH/2 - MeasureText("Click to Play Again", 20)/2, 350, 20, LIGHTGRAY);
+        DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 150, 60, GOLD);
+        
+        const char* movesText = TextFormat("Total Moves: %i", moves);
+        DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 30)/2, 240, 30, DARKGRAY);
+        
+        // NEW: Error Stat
+        Color errColor = (errors == 0) ? GREEN : RED;
+        const char* errText = TextFormat("Errors Made: %i", errors);
+        DrawText(errText, SCREEN_WIDTH/2 - MeasureText(errText, 30)/2, 280, 30, errColor);
+        
+        if (errors == 0) {
+            DrawText("PERFECT MEMORY!", SCREEN_WIDTH/2 - MeasureText("PERFECT MEMORY!", 20)/2, 320, 20, ORANGE);
+        }
+
+        DrawText("Click to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click to Return to Menu", 20)/2, 400, 20, LIGHTGRAY);
     }
     else {
         // Draw Grid
         for (const auto& card : cards) {
             DrawCard(card);
         }
+        // HUD
         DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
+        DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
     }
 
     EndDrawing();
 }
 
 void DrawCard(const Card& card) {
+    // Do not draw the inactive center card in 5x5 mode
+    if (!card.active) return;
+
+    Rectangle r = card.rect;
+
     if (card.matched) {
-        // Ghost/faded out style for matched cards
-        DrawRectangleRec(card.rect, Fade(card.color, 0.3f));
-        DrawRectangleLinesEx(card.rect, 2, Fade(card.color, 0.5f));
+        DrawRectangleRec(r, Fade(card.color, 0.3f));
+        DrawRectangleLinesEx(r, 2, Fade(card.color, 0.5f));
     } else if (card.flipped) {
-        // Face up
-        DrawRectangleRec(card.rect, card.color);
-        DrawRectangleLinesEx(card.rect, 3, WHITE);
-        // Simple icon style detail
-        DrawCircle(card.rect.x + card.rect.width/2, card.rect.y + card.rect.height/2, 10, WHITE);
+        DrawRectangleRec(r, card.color);
+        DrawRectangleLinesEx(r, 3, WHITE);
+        DrawCircle(r.x + r.width/2, r.y + r.height/2, 10, WHITE);
     } else {
-        // Face down (Card back)
-        DrawRectangleRec(card.rect, DARKGRAY);
-        DrawRectangleLinesEx(card.rect, 3, GRAY);
-        // Pattern on back
-        DrawLine(card.rect.x, card.rect.y, card.rect.x + card.rect.width, card.rect.y + card.rect.height, GRAY);
-        DrawLine(card.rect.x + card.rect.width, card.rect.y, card.rect.x, card.rect.y + card.rect.height, GRAY);
+        DrawRectangleRec(r, DARKGRAY);
+        DrawRectangleLinesEx(r, 3, GRAY);
+        // Hatch pattern
+        DrawLine(r.x, r.y, r.x + r.width, r.y + r.height, GRAY);
+        DrawLine(r.x + r.width, r.y, r.x, r.y + r.height, GRAY);
     }
 }
