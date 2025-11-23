@@ -141,6 +141,11 @@
               });
       }
 
+      // --- New Function for C++ to call on start ---
+      window.refreshLeaderboard = function() {
+          renderScores();
+      }
+
       // 2. Send Score to the Cloud (Called by C++)
       window.updateLeaderboard = function(score) {
           // Ask the player for their name using the browser's native popup

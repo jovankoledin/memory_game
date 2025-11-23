@@ -19,10 +19,21 @@
             console.log("Leaderboard function not found in HTML");
         }
     });
+    EM_JS(void, RefreshLeaderboard, (), {
+        if (typeof window.refreshLeaderboard === 'function') {
+            window.refreshLeaderboard();
+        } else {
+            console.log("Leaderboard refresh function not found in HTML");
+        }
+    });
 #else
     // Fallback for non-web builds so it compiles
     void SaveScoreToBrowser(int score) { 
         printf("Game Over! Score: %i\n", score); 
+    }
+    // *** NEW ADDITION ***
+    void RefreshLeaderboard() { 
+        // No action needed for non-web build
     }
 #endif
 
@@ -101,6 +112,11 @@ void ResetGame() {
     firstSelection = nullptr;
     secondSelection = nullptr;
     currentState = STATE_PLAYING;
+
+    // *** NEW ADDITION: Refresh Leaderboard on game reset ***
+    #if defined(PLATFORM_WEB)
+        RefreshLeaderboard();
+    #endif
 
     // Create pairs
     std::vector<int> ids;
