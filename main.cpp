@@ -47,7 +47,7 @@ const Color CARD_COLORS[] = {
 // --- Game State ---
 enum GameState {
     STATE_MENU,
-    STATE_HELP,
+    STATE_HELP,    // New State
     STATE_PLAYING,
     STATE_WAITING, 
     STATE_GAMEOVER
@@ -56,12 +56,6 @@ enum GameState {
 enum Difficulty {
     DIFF_MEDIUM, // 4x4
     DIFF_HARD    // 5x5
-};
-
-// Helper struct to map Raylib Keys to readable chars
-struct KeyDefinition {
-    KeyboardKey key;
-    char label[2]; // Null terminated string for drawing
 };
 
 struct Card {
@@ -73,10 +67,6 @@ struct Card {
     bool matched;
     bool active;  
     
-    // New Input Logic
-    KeyboardKey assignedKey; 
-    char keyLabel[2];
-
     // Animation State
     float flipProgress; // 0.0f (Back) to 1.0f (Front)
 };
@@ -89,13 +79,16 @@ Difficulty currentDifficulty = DIFF_MEDIUM;
 Card* firstSelection = nullptr;
 Card* secondSelection = nullptr;
 
+// Input State
+int keyboardCursor = 0; 
+
 // Stats
 double waitTimer = 0.0;
 int matchesFound = 0;
 int moves = 0;
 int errors = 0;
 int totalPairs = 0;
-int finalScore = 0; 
+int finalScore = 0; // New variable to store calculated score
 
 // Memory Tracking for Errors
 std::vector<bool> cardSeen; 
@@ -105,7 +98,6 @@ void InitGame();
 void StartGame(Difficulty diff);
 void UpdateDrawFrame(void);
 void DrawCard(const Card& card);
-std::vector<KeyDefinition> GetKeyPool(); 
 
 // --- Main Entry Point ---
 int main() {
@@ -125,30 +117,6 @@ int main() {
     return 0;
 }
 
-// --- Helper: Generate Pool of Keys (0-9, A-Z) ---
-std::vector<KeyDefinition> GetKeyPool() {
-    std::vector<KeyDefinition> pool;
-    
-    // Add Numbers 0-9
-    for (int i = 0; i <= 9; i++) {
-        KeyDefinition k;
-        k.key = (KeyboardKey)(KEY_ZERO + i);
-        k.label[0] = '0' + i;
-        k.label[1] = '\0';
-        pool.push_back(k);
-    }
-    
-    // Add Letters A-Z
-    for (int i = 0; i < 26; i++) {
-        KeyDefinition k;
-        k.key = (KeyboardKey)(KEY_A + i);
-        k.label[0] = 'A' + i;
-        k.label[1] = '\0';
-        pool.push_back(k);
-    }
-    return pool;
-}
-
 // --- Game Logic ---
 
 void InitGame() {
@@ -164,7 +132,9 @@ void StartGame(Difficulty diff) {
     firstSelection = nullptr;
     secondSelection = nullptr;
     currentDifficulty = diff;
-    
+    currentState = STATE_PLAYING;
+    keyboardCursor = 0; 
+
     int rows = (diff == DIFF_MEDIUM) ? 4 : 5;
     int cols = (diff == DIFF_MEDIUM) ? 4 : 5;
     
@@ -173,22 +143,15 @@ void StartGame(Difficulty diff) {
 
     cardSeen.assign(totalSlots, false);
 
-    // 1. Setup IDs for Pairs
     std::vector<int> ids;
     for (int i = 0; i < totalPairs; i++) {
         ids.push_back(i);
         ids.push_back(i);
     }
 
-    // 2. Setup Input Keys (Randomized)
-    std::vector<KeyDefinition> keyPool = GetKeyPool();
-
-    // Random generators
     std::random_device rd;
     std::mt19937 g(rd());
-    
     std::shuffle(ids.begin(), ids.end(), g);
-    std::shuffle(keyPool.begin(), keyPool.end(), g); // Shuffle keys so 'A' isn't always top-left
 
     int gridWidth = (cols * CARD_SIZE) + ((cols - 1) * CARD_SPACING);
     int gridHeight = (rows * CARD_SIZE) + ((rows - 1) * CARD_SPACING);
@@ -196,8 +159,6 @@ void StartGame(Difficulty diff) {
     int offsetY = (SCREEN_HEIGHT - gridHeight) / 2;
 
     int idCounter = 0;
-    int keyCounter = 0;
-
     for (int y = 0; y < rows; y++) {
         for (int x = 0; x < cols; x++) {
             Card c;
@@ -210,7 +171,7 @@ void StartGame(Difficulty diff) {
             c.gridIndex = (y * cols) + x;
             c.flipped = false;
             c.matched = false;
-            c.flipProgress = 0.0f; 
+            c.flipProgress = 0.0f; // Initialize to Face Down
             
             bool isCenter = (diff == DIFF_HARD && x == 2 && y == 2);
             
@@ -218,21 +179,10 @@ void StartGame(Difficulty diff) {
                 c.active = false;
                 c.id = -1;
                 c.color = DARKGRAY;
-                // Center card gets no key
-                c.assignedKey = KEY_NULL;
-                c.keyLabel[0] = '\0';
             } else {
                 c.active = true;
                 c.id = ids[idCounter++];
                 c.color = CARD_COLORS[c.id % 12]; 
-                
-                // Assign Random Key
-                if (keyCounter < keyPool.size()) {
-                    c.assignedKey = keyPool[keyCounter].key;
-                    c.keyLabel[0] = keyPool[keyCounter].label[0];
-                    c.keyLabel[1] = '\0';
-                    keyCounter++;
-                }
             }
 
             cards.push_back(c);
@@ -242,6 +192,7 @@ void StartGame(Difficulty diff) {
     #if defined(PLATFORM_WEB)
         RefreshLeaderboard();
     #endif
+    
 }
 
 void UpdateDrawFrame() {
@@ -251,6 +202,7 @@ void UpdateDrawFrame() {
     float dt = GetFrameTime();
 
     // --- ANIMATION UPDATE ---
+    // This runs globally so cards animate regardless of game state
     for (auto& card : cards) {
         if (!card.active) continue;
 
@@ -291,31 +243,62 @@ void UpdateDrawFrame() {
             break;
 
         case STATE_PLAYING: {
+            // --- NEW: Check for Menu Button Click ---
             Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 100, 30 };
             if (mouseClicked && CheckCollisionPointRec(mousePos, btnMenu)) {
                 currentState = STATE_MENU;
-                break; 
+                break; // Skip the rest of the playing logic
             }
 
-            Card* cardToSelect = nullptr;
-
-            // 1. Mouse Selection (Legacy support, but primarily for UI fallback)
-            if (mouseClicked) {
-                for (auto& card : cards) {
-                    if (card.active && CheckCollisionPointRec(mousePos, card.rect)) {
-                        cardToSelect = &card;
-                        break;
+            int cols = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
+            int rows = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
+            
+            // --- KEYBOARD NAVIGATION ---
+            int dx = 0;
+            int dy = 0;
+            if (IsKeyPressed(KEY_RIGHT)) dx = 1;
+            if (IsKeyPressed(KEY_LEFT)) dx = -1;
+            if (IsKeyPressed(KEY_DOWN)) dy = 1;
+            if (IsKeyPressed(KEY_UP)) dy = -1;
+            
+            if (dx != 0 || dy != 0) {
+                int cx = keyboardCursor % cols;
+                int cy = keyboardCursor / cols;
+                
+                int nx = cx + dx;
+                int ny = cy + dy;
+                
+                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                    int nextIndex = ny * cols + nx;
+                    if (!cards[nextIndex].active) {
+                        nx += dx;
+                        ny += dy;
+                        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                            nextIndex = ny * cols + nx;
+                            keyboardCursor = nextIndex;
+                        }
+                    } else {
+                        keyboardCursor = nextIndex;
                     }
                 }
             }
 
-            // 2. Direct Key Selection
-            // Iterate over all active cards to see if their specific key was pressed
-            if (cardToSelect == nullptr) {
+            Card* cardToSelect = nullptr;
+
+            if (mouseClicked) {
                 for (auto& card : cards) {
-                    if (card.active && !card.matched && !card.flipped && IsKeyPressed(card.assignedKey)) {
+                    if (card.active && CheckCollisionPointRec(mousePos, card.rect)) {
                         cardToSelect = &card;
-                        break; // Only handle one card press per frame
+                        keyboardCursor = card.gridIndex; 
+                        break;
+                    }
+                }
+            }
+            else if (enterPressed) {
+                if (keyboardCursor >= 0 && keyboardCursor < (int)cards.size()) {
+                    Card& c = cards[keyboardCursor];
+                    if (c.active) {
+                        cardToSelect = &c;
                     }
                 }
             }
@@ -348,7 +331,7 @@ void UpdateDrawFrame() {
                     if (matchesFound >= totalPairs) {
                         currentState = STATE_GAMEOVER;
 
-                        // --- SCORING LOGIC ---
+                        // --- NEW SCORING LOGIC ---
                         float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 1.5f : 1.0f;
                         finalScore = (int)((float)(moves + errors) * multiplier);
                         
@@ -422,8 +405,8 @@ void UpdateDrawFrame() {
         int fontSize = 20;
         int spacing = 35;
 
-        DrawText("- Type the key shown on the card to flip it.", x, y, fontSize, DARKGRAY); y += spacing;
-        DrawText("- Try to match pairs with the fewest moves.", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Flip cards to find matching pairs.", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Use Mouse to click OR Arrow Keys + Enter.", x, y, fontSize, DARKGRAY); y += spacing;
         
         y += 10;
         DrawText("SCORING (Lower is Better!):", x, y, 22, GOLD); y += spacing;
@@ -435,6 +418,9 @@ void UpdateDrawFrame() {
         DrawText("Hard Mode has no multiplier (1.0x).", x, y, fontSize, DARKGRAY); y += spacing;
         DrawText("Medium Mode has a penalty multiplier (1.5x).", x, y, fontSize, DARKGRAY); y += spacing;
 
+        DrawText("SAVING:", x, y, 22, GOLD); y += spacing;
+        DrawText("Enter your name at the end to save to the Global Leaderboard.", x+20, y, fontSize, DARKGRAY);
+
         DrawText("Click or Press Enter to return", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to return", 20)/2, 530, 20, LIGHTGRAY);
     }
     else if (currentState == STATE_GAMEOVER) {
@@ -443,6 +429,7 @@ void UpdateDrawFrame() {
         const char* movesText = TextFormat("Moves: %i   Errors: %i", moves, errors);
         DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 24)/2, 220, 24, DARKGRAY);
 
+        // Show Final Score Calculation
         const char* scoreText = TextFormat("FINAL SCORE: %i", finalScore);
         DrawText(scoreText, SCREEN_WIDTH/2 - MeasureText(scoreText, 40)/2, 270, 40, SKYBLUE);
 
@@ -466,6 +453,7 @@ void UpdateDrawFrame() {
         DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
         DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
 
+        // --- NEW: Draw Menu Button ---
         Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 70, 30 };
         bool isHovering = CheckCollisionPointRec(mousePos, btnMenu);
         Color btnColor = isHovering ? MAROON : DARKGRAY;
@@ -482,15 +470,26 @@ void DrawCard(const Card& card) {
     if (!card.active) return;
 
     // --- ANIMATION CALCULATIONS ---
+    // Visual flip logic:
+    // 0.0 (Back) -> 0.5 (Edge) -> 1.0 (Front)
+    // We determine scale based on distance from 0.5
+    
     float animVal = card.flipProgress;
     bool showFront = (animVal >= 0.5f);
     
+    // Calculate width scale: 
+    // At animVal 0.0 -> scale 1.0
+    // At animVal 0.5 -> scale 0.0
+    // At animVal 1.0 -> scale 1.0
     float scaleX = fabsf(1.0f - (2.0f * animVal));
 
+    // Create the drawing rectangle centered on the original position
     Rectangle r = card.rect;
     float originalWidth = r.width;
     r.width = originalWidth * scaleX;
     r.x = card.rect.x + (originalWidth - r.width) / 2.0f;
+
+    bool isSelected = (currentState == STATE_PLAYING && card.gridIndex == keyboardCursor);
 
     // --- RENDER ---
     if (showFront) {
@@ -501,7 +500,7 @@ void DrawCard(const Card& card) {
         } else {
             DrawRectangleRec(r, card.color);
             DrawRectangleLinesEx(r, 3, WHITE);
-            // Simple symbol
+            // Simple symbol to give it texture
             DrawCircle(r.x + r.width/2, r.y + r.height/2, 10 * scaleX, WHITE);
         }
     } else {
@@ -509,21 +508,16 @@ void DrawCard(const Card& card) {
         DrawRectangleRec(r, DARKGRAY);
         DrawRectangleLinesEx(r, 3, GRAY);
         
-        // DRAW THE ASSIGNED KEY 
-        // Only draw if width is sufficient
-        if (scaleX > 0.4f && !card.matched) {
-            int fontSize = 40;
-            // Center the text
-            int textWidth = MeasureText(card.keyLabel, fontSize);
-            // Dynamic scaling correction for the text so it squishes with the card
-            // (Optional polish: can just not draw if scale is low)
-            
-            DrawText(card.keyLabel, 
-                (int)(r.x + (r.width - textWidth * scaleX)/2), 
-                (int)(r.y + (r.height - fontSize)/2), 
-                fontSize, 
-                LIGHTGRAY
-            );
+        // Only draw pattern if width is sufficient to avoid ugly aliasing
+        if (scaleX > 0.2f) {
+            DrawLine(r.x, r.y, r.x + r.width, r.y + r.height, GRAY);
+            DrawLine(r.x + r.width, r.y, r.x, r.y + r.height, GRAY);
         }
+    }
+    
+    // Draw Selection Highlight
+    // We draw this outside the scaling logic slightly so it tracks the flip
+    if (isSelected) {
+        DrawRectangleLinesEx(r, 5, SKYBLUE); 
     }
 }
