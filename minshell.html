@@ -95,7 +95,7 @@
     <div class="spinner" id='spinner'></div>
     
     <div id="leaderboard">
-        <h3>Best Moves</h3>
+        <h3>Top Scores</h3>
         <ul id="score-list">
             <li style="justify-content:center; color:#888;">Loading...</li>
         </ul>
@@ -105,7 +105,7 @@
         <div class="modal-content">
             <h2>You Won!</h2>
             <div style="font-size: 40px; color: #00aeef; font-weight:bold;" id="modal-score">0</div>
-            <p>Moves</p>
+            <p>Score</p>
             
             <input type="text" id="player-name-input" placeholder="Enter Name" maxlength="10" autocomplete="off">
             <span id="match-status"></span>
@@ -169,7 +169,7 @@
                         <span>#${index + 1} ${entry.name.substring(0, 10)}</span> 
                         <div>
                             <span class="score-val">${entry.score}</span>
-                            <span class="score-label">moves</span>
+                            <span class="score-label">pts</span>
                         </div>
                       `;
                       list.appendChild(li);
@@ -261,7 +261,7 @@
 
           if (playersCache.hasOwnProperty(lowerName)) {
               const oldScore = playersCache[lowerName];
-              // In "Moves" game, Lower is Better.
+              // In this game, Lower is Better.
               // If new score is >= old score, do not update.
               if (currentPendingScore >= oldScore) {
                   shouldUpdate = false;

@@ -47,6 +47,7 @@ const Color CARD_COLORS[] = {
 // --- Game State ---
 enum GameState {
     STATE_MENU,
+    STATE_HELP,    // New State
     STATE_PLAYING,
     STATE_WAITING, 
     STATE_GAMEOVER
@@ -87,6 +88,7 @@ int matchesFound = 0;
 int moves = 0;
 int errors = 0;
 int totalPairs = 0;
+int finalScore = 0; // New variable to store calculated score
 
 // Memory Tracking for Errors
 std::vector<bool> cardSeen; 
@@ -126,6 +128,7 @@ void StartGame(Difficulty diff) {
     matchesFound = 0;
     moves = 0;
     errors = 0;
+    finalScore = 0;
     firstSelection = nullptr;
     secondSelection = nullptr;
     currentDifficulty = diff;
@@ -221,12 +224,21 @@ void UpdateDrawFrame() {
             if (mouseClicked) {
                 Rectangle btnMedium = { SCREEN_WIDTH/2 - 100, 250, 200, 50 };
                 Rectangle btnHard = { SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+                Rectangle btnHelp = { SCREEN_WIDTH/2 - 100, 390, 200, 50 };
 
                 if (CheckCollisionPointRec(mousePos, btnMedium)) {
                     StartGame(DIFF_MEDIUM);
                 } else if (CheckCollisionPointRec(mousePos, btnHard)) {
                     StartGame(DIFF_HARD);
+                } else if (CheckCollisionPointRec(mousePos, btnHelp)) {
+                    currentState = STATE_HELP;
                 }
+            }
+            break;
+
+        case STATE_HELP:
+            if (mouseClicked || enterPressed || IsKeyPressed(KEY_ESCAPE)) {
+                currentState = STATE_MENU;
             }
             break;
 
@@ -285,8 +297,6 @@ void UpdateDrawFrame() {
             }
 
             if (cardToSelect) {
-                // Only allow selection if not already matched and not currently flipping/flipped
-                // We check flipProgress < 0.5 to ensure we don't click a card that is already half-open
                 if (!cardToSelect->matched && !cardToSelect->flipped && cardToSelect->flipProgress < 0.5f) {
                     cardToSelect->flipped = true;
                     cardSeen[cardToSelect->gridIndex] = true;
@@ -313,7 +323,12 @@ void UpdateDrawFrame() {
                     
                     if (matchesFound >= totalPairs) {
                         currentState = STATE_GAMEOVER;
-                        SaveScoreToBrowser(moves);
+
+                        // --- NEW SCORING LOGIC ---
+                        float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 1.5f : 1.0f;
+                        finalScore = (int)((float)(moves + errors) * multiplier);
+                        
+                        SaveScoreToBrowser(finalScore);
                     } else {
                         currentState = STATE_PLAYING;
                     }
@@ -359,13 +374,15 @@ void UpdateDrawFrame() {
     for(int i=0; i<SCREEN_HEIGHT; i+=40) DrawLine(0, i, SCREEN_WIDTH, i, Fade(LIGHTGRAY, 0.3f));
 
     if (currentState == STATE_MENU) {
-        DrawText("MEMORY GAME", SCREEN_WIDTH/2 - MeasureText("MEMORY GAME", 60)/2, 150, 60, DARKGRAY);
+        DrawText("MEMORY GAME", SCREEN_WIDTH/2 - MeasureText("MEMORY GAME", 60)/2, 130, 60, DARKGRAY);
         
         Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
         Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+        Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
         
         Color medColor = CheckCollisionPointRec(mousePos, btnMedium) ? SKYBLUE : LIGHTGRAY;
         Color hardColor = CheckCollisionPointRec(mousePos, btnHard) ? PINK : LIGHTGRAY;
+        Color helpColor = CheckCollisionPointRec(mousePos, btnHelp) ? GOLD : LIGHTGRAY;
 
         DrawRectangleRec(btnMedium, medColor);
         DrawRectangleLinesEx(btnMedium, 2, DARKGRAY);
@@ -374,25 +391,62 @@ void UpdateDrawFrame() {
         DrawRectangleRec(btnHard, hardColor);
         DrawRectangleLinesEx(btnHard, 2, DARKGRAY);
         DrawText("Hard (5x5)", (int)btnHard.x + 35, (int)btnHard.y + 10, 24, DARKGRAY);
-        
+
+        DrawRectangleRec(btnHelp, helpColor);
+        DrawRectangleLinesEx(btnHelp, 2, DARKGRAY);
+        DrawText("HOW TO PLAY", (int)btnHelp.x + 20, (int)btnHelp.y + 10, 24, DARKGRAY);
     } 
+    else if (currentState == STATE_HELP) {
+        // --- HELP SCREEN ---
+        DrawText("HOW TO PLAY", SCREEN_WIDTH/2 - MeasureText("HOW TO PLAY", 40)/2, 60, 40, SKYBLUE);
+        
+        int y = 140;
+        int x = 100;
+        int fontSize = 20;
+        int spacing = 35;
+
+        DrawText("- Flip cards to find matching pairs.", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Use Mouse to click OR Arrow Keys + Enter.", x, y, fontSize, DARKGRAY); y += spacing;
+        
+        y += 10;
+        DrawText("SCORING (Lower is Better!):", x, y, 22, GOLD); y += spacing;
+        DrawText("Score = (Moves + Errors) x Difficulty Multiplier", x + 20, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Moves: Every pair of cards you flip.", x + 20, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Errors: Flipping a card you have seen before", x + 20, y, fontSize, RED); y += 22;
+        DrawText("  but failing to match it.", x + 40, y, fontSize, RED); y += spacing + 10;
+        
+        DrawText("Hard Mode has no multiplier (1.0x).", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("Medium Mode has a penalty multiplier (1.5x).", x, y, fontSize, DARKGRAY); y += spacing;
+
+        DrawText("SAVING:", x, y, 22, GOLD); y += spacing;
+        DrawText("Enter your name at the end to save to the Global Leaderboard.", x+20, y, fontSize, DARKGRAY);
+
+        DrawText("Click or Press Enter to return", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to return", 20)/2, 530, 20, LIGHTGRAY);
+    }
     else if (currentState == STATE_GAMEOVER) {
-        DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 150, 60, GOLD);
+        DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 130, 60, GOLD);
         
-        const char* movesText = TextFormat("Total Moves: %i", moves);
-        DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 30)/2, 240, 30, DARKGRAY);
+        const char* movesText = TextFormat("Moves: %i   Errors: %i", moves, errors);
+        DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 24)/2, 220, 24, DARKGRAY);
+
+        // Show Final Score Calculation
+        const char* scoreText = TextFormat("FINAL SCORE: %i", finalScore);
+        DrawText(scoreText, SCREEN_WIDTH/2 - MeasureText(scoreText, 40)/2, 270, 40, SKYBLUE);
+
+        if (currentDifficulty == DIFF_MEDIUM) {
+             DrawText("(Moves + Errors) x 1.5", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors) x 1.5", 20)/2, 320, 20, LIGHTGRAY);
+        } else {
+             DrawText("(Moves + Errors) x 1.0", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors) x 1.0", 20)/2, 320, 20, LIGHTGRAY);
+        }
         
-        Color errColor = (errors == 0) ? GREEN : RED;
-        const char* errText = TextFormat("Errors Made: %i", errors);
-        DrawText(errText, SCREEN_WIDTH/2 - MeasureText(errText, 30)/2, 280, 30, errColor);
-        
-        if (errors == 0) {
-            DrawText("PERFECT MEMORY!", SCREEN_WIDTH/2 - MeasureText("PERFECT MEMORY!", 20)/2, 320, 20, ORANGE);
+        if (finalScore < 20) {
+            DrawText("INCREDIBLE MEMORY!", SCREEN_WIDTH/2 - MeasureText("INCREDIBLE MEMORY!", 20)/2, 360, 20, ORANGE);
         }
 
-        DrawText("Click or Press Enter to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to Return to Menu", 20)/2, 400, 20, LIGHTGRAY);
+        DrawText("Click or Press Enter to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to Return to Menu", 20)/2, 450, 20, LIGHTGRAY);
     }
     else {
+        // Playing
         for (const auto& card : cards) {
             DrawCard(card);
         }
