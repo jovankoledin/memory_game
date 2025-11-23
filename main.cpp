@@ -243,6 +243,13 @@ void UpdateDrawFrame() {
             break;
 
         case STATE_PLAYING: {
+            // --- NEW: Check for Menu Button Click ---
+            Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 100, 30 };
+            if (mouseClicked && CheckCollisionPointRec(mousePos, btnMenu)) {
+                currentState = STATE_MENU;
+                break; // Skip the rest of the playing logic
+            }
+
             int cols = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
             int rows = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
             
@@ -452,6 +459,15 @@ void UpdateDrawFrame() {
         }
         DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
         DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
+
+        // --- NEW: Draw Menu Button ---
+        Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 100, 30 };
+        bool isHovering = CheckCollisionPointRec(mousePos, btnMenu);
+        Color btnColor = isHovering ? MAROON : DARKGRAY;
+        
+        DrawRectangleRec(btnMenu, btnColor);
+        DrawRectangleLinesEx(btnMenu, 2, WHITE);
+        DrawText("PAUSE/MENU", (int)btnMenu.x + 8, (int)btnMenu.y + 8, 12, RAYWHITE);
     }
 
     EndDrawing();
