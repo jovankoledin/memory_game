@@ -467,7 +467,7 @@ void UpdateDrawFrame() {
         
         DrawRectangleRec(btnMenu, btnColor);
         DrawRectangleLinesEx(btnMenu, 2, WHITE);
-        DrawText("PAUSE/MENU", (int)btnMenu.x + 8, (int)btnMenu.y + 8, 12, RAYWHITE);
+        DrawText("MENU", (int)btnMenu.x + 8, (int)btnMenu.y + 8, 12, RAYWHITE);
     }
 
     EndDrawing();
