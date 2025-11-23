@@ -461,7 +461,7 @@ void UpdateDrawFrame() {
         DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
 
         // --- NEW: Draw Menu Button ---
-        Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 100, 30 };
+        Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 70, 30 };
         bool isHovering = CheckCollisionPointRec(mousePos, btnMenu);
         Color btnColor = isHovering ? MAROON : DARKGRAY;
         
