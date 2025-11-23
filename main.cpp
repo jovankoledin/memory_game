@@ -75,6 +75,9 @@ Difficulty currentDifficulty = DIFF_MEDIUM;
 Card* firstSelection = nullptr;
 Card* secondSelection = nullptr;
 
+// Input State
+int keyboardCursor = 0; // Index of the currently highlighted card
+
 // Stats
 double waitTimer = 0.0;
 int matchesFound = 0;
@@ -124,6 +127,7 @@ void StartGame(Difficulty diff) {
     secondSelection = nullptr;
     currentDifficulty = diff;
     currentState = STATE_PLAYING;
+    keyboardCursor = 0; // Reset cursor to top-left
 
     int rows = (diff == DIFF_MEDIUM) ? 4 : 5;
     int cols = (diff == DIFF_MEDIUM) ? 4 : 5;
@@ -192,12 +196,13 @@ void StartGame(Difficulty diff) {
 
 void UpdateDrawFrame() {
     Vector2 mousePos = GetMousePosition();
-    bool clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    bool enterPressed = IsKeyPressed(KEY_ENTER);
 
     // --- UPDATE ---
     switch (currentState) {
         case STATE_MENU:
-            if (clicked) {
+            if (mouseClicked) {
                 // Simple button collision logic for Menu
                 Rectangle btnMedium = { SCREEN_WIDTH/2 - 100, 250, 200, 50 };
                 Rectangle btnHard = { SCREEN_WIDTH/2 - 100, 320, 200, 50 };
@@ -210,29 +215,86 @@ void UpdateDrawFrame() {
             }
             break;
 
-        case STATE_PLAYING:
-            if (clicked) {
-                for (auto& card : cards) {
-                    // Ignore inactive cards (center slot in 5x5)
-                    if (!card.active) continue;
-
-                    if (!card.matched && !card.flipped && CheckCollisionPointRec(mousePos, card.rect)) {
-                        card.flipped = true;
-                        cardSeen[card.gridIndex] = true; // Mark this location as "Seen"
-                        
-                        if (!firstSelection) {
-                            firstSelection = &card;
-                        } else {
-                            secondSelection = &card;
-                            moves++;
-                            currentState = STATE_WAITING;
-                            waitTimer = GetTime();
+        case STATE_PLAYING: {
+            int cols = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
+            int rows = (currentDifficulty == DIFF_MEDIUM) ? 4 : 5;
+            
+            // --- KEYBOARD NAVIGATION ---
+            int dx = 0;
+            int dy = 0;
+            if (IsKeyPressed(KEY_RIGHT)) dx = 1;
+            if (IsKeyPressed(KEY_LEFT)) dx = -1;
+            if (IsKeyPressed(KEY_DOWN)) dy = 1;
+            if (IsKeyPressed(KEY_UP)) dy = -1;
+            
+            if (dx != 0 || dy != 0) {
+                int cx = keyboardCursor % cols;
+                int cy = keyboardCursor / cols;
+                
+                int nx = cx + dx;
+                int ny = cy + dy;
+                
+                // Bounds Check
+                if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                    int nextIndex = ny * cols + nx;
+                    
+                    // Skip inactive card (Middle of 5x5)
+                    if (!cards[nextIndex].active) {
+                        nx += dx;
+                        ny += dy;
+                        // Re-check bounds after jump
+                        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                            nextIndex = ny * cols + nx;
+                            keyboardCursor = nextIndex;
                         }
+                    } else {
+                        keyboardCursor = nextIndex;
+                    }
+                }
+            }
+
+            // --- SELECTION LOGIC ---
+            Card* cardToSelect = nullptr;
+
+            // 1. Check Mouse Click
+            if (mouseClicked) {
+                for (auto& card : cards) {
+                    if (card.active && CheckCollisionPointRec(mousePos, card.rect)) {
+                        cardToSelect = &card;
+                        // Sync keyboard cursor to mouse position for continuity
+                        keyboardCursor = card.gridIndex; 
                         break;
                     }
                 }
             }
+            // 2. Check Enter Key
+            else if (enterPressed) {
+                if (keyboardCursor >= 0 && keyboardCursor < (int)cards.size()) {
+                    Card& c = cards[keyboardCursor];
+                    if (c.active) {
+                        cardToSelect = &c;
+                    }
+                }
+            }
+
+            // Apply Logic if we have a valid selection
+            if (cardToSelect) {
+                if (!cardToSelect->matched && !cardToSelect->flipped) {
+                    cardToSelect->flipped = true;
+                    cardSeen[cardToSelect->gridIndex] = true;
+                    
+                    if (!firstSelection) {
+                        firstSelection = cardToSelect;
+                    } else {
+                        secondSelection = cardToSelect;
+                        moves++;
+                        currentState = STATE_WAITING;
+                        waitTimer = GetTime();
+                    }
+                }
+            }
             break;
+        }
 
         case STATE_WAITING:
             if (GetTime() - waitTimer > 0.8) { // 0.8s delay
@@ -250,19 +312,11 @@ void UpdateDrawFrame() {
                     }
                 } else {
                     // --- MISMATCH (Check for Errors) ---
-                    
-                    // ERROR LOGIC:
-                    // If we picked Card A and Card B (mismatch), check if we had 
-                    // PREVIOUSLY seen the partner of A or the partner of B. 
-                    // If we knew where the partner was but didn't pick it, that's an error.
-                    
                     bool errorDetected = false;
 
                     // Find partner of first selection
                     for (const auto& c : cards) {
                         if (c.active && c.id == firstSelection->id && c.gridIndex != firstSelection->gridIndex) {
-                            // We found the partner in the list. Was it seen before?
-                            // Also ensure the partner isn't the one we just clicked (secondSelection)
                             if (cardSeen[c.gridIndex] && c.gridIndex != secondSelection->gridIndex) {
                                 errorDetected = true;
                             }
@@ -292,7 +346,7 @@ void UpdateDrawFrame() {
             break;
 
         case STATE_GAMEOVER:
-            if (clicked) {
+            if (mouseClicked || enterPressed) {
                 InitGame(); // Go back to menu
             }
             break;
@@ -323,6 +377,8 @@ void UpdateDrawFrame() {
         DrawRectangleRec(btnHard, hardColor);
         DrawRectangleLinesEx(btnHard, 2, DARKGRAY);
         DrawText("Hard (5x5)", (int)btnHard.x + 35, (int)btnHard.y + 10, 24, DARKGRAY);
+        
+        DrawText("Use Mouse or Arrow Keys + Enter", SCREEN_WIDTH/2 - MeasureText("Use Mouse or Arrow Keys + Enter", 20)/2, 450, 20, GRAY);
     } 
     else if (currentState == STATE_GAMEOVER) {
         DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 150, 60, GOLD);
@@ -339,7 +395,7 @@ void UpdateDrawFrame() {
             DrawText("PERFECT MEMORY!", SCREEN_WIDTH/2 - MeasureText("PERFECT MEMORY!", 20)/2, 320, 20, ORANGE);
         }
 
-        DrawText("Click to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click to Return to Menu", 20)/2, 400, 20, LIGHTGRAY);
+        DrawText("Click or Press Enter to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to Return to Menu", 20)/2, 400, 20, LIGHTGRAY);
     }
     else {
         // Draw Grid
@@ -349,6 +405,9 @@ void UpdateDrawFrame() {
         // HUD
         DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
         DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
+        
+        // Instructions
+        DrawText("Arrows to Move, Enter to Select", 20, SCREEN_HEIGHT - 30, 20, LIGHTGRAY);
     }
 
     EndDrawing();
@@ -359,6 +418,10 @@ void DrawCard(const Card& card) {
     if (!card.active) return;
 
     Rectangle r = card.rect;
+    
+    // Calculate highlight state
+    // We only show selection highlight if we are in Playing state
+    bool isSelected = (currentState == STATE_PLAYING && card.gridIndex == keyboardCursor);
 
     if (card.matched) {
         DrawRectangleRec(r, Fade(card.color, 0.3f));
@@ -373,5 +436,10 @@ void DrawCard(const Card& card) {
         // Hatch pattern
         DrawLine(r.x, r.y, r.x + r.width, r.y + r.height, GRAY);
         DrawLine(r.x + r.width, r.y, r.x, r.y + r.height, GRAY);
+    }
+    
+    // Draw Keyboard Selection Highlight
+    if (isSelected) {
+        DrawRectangleLinesEx(r, 5, SKYBLUE); // Thick blue border for selection
     }
 }
