@@ -161,7 +161,7 @@
                       playersCache[e.name.toLowerCase()] = parseInt(e.score);
                   });
 
-                  // Display Top 5
+                  // Display Top 20
                   const topScores = entries.slice(0, 20);
                   topScores.forEach((entry, index) => {
                       const li = document.createElement('li');
@@ -212,8 +212,10 @@
 
       // Stop key events from bubbling up to Raylib/Emscripten
       // This prevents the game from intercepting Backspace, Arrow keys, or 'P' (Pause)
-      nameInput.addEventListener('keydown', (e) => {
-          e.stopPropagation();
+      ['keydown', 'keyup', 'keypress'].forEach(eventType => {
+          nameInput.addEventListener(eventType, (e) => {
+              e.stopPropagation();
+          });
       });
 
       function validateInput(val) {
