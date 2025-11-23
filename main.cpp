@@ -12,18 +12,16 @@
 #endif
 
 #if defined(PLATFORM_WEB)
+    // Note: We just pass the score. The JS handles the Modal, Validation, and overwrite logic.
     EM_JS(void, SaveScoreToBrowser, (int score), {
         if (typeof window.updateLeaderboard === 'function') {
             window.updateLeaderboard(score);
-        } else {
-            console.log("Leaderboard function not found in HTML");
         }
     });
+    // This function is called on startup and game restart to pre-fetch scores for live validation.
     EM_JS(void, RefreshLeaderboard, (), {
         if (typeof window.refreshLeaderboard === 'function') {
             window.refreshLeaderboard();
-        } else {
-            console.log("Leaderboard refresh function not found in HTML");
         }
     });
 #else
@@ -191,6 +189,7 @@ void StartGame(Difficulty diff) {
     #if defined(PLATFORM_WEB)
         RefreshLeaderboard();
     #endif
+    
 }
 
 void UpdateDrawFrame() {
@@ -350,6 +349,7 @@ void UpdateDrawFrame() {
                 InitGame();
             }
             break;
+            
     }
 
     // --- DRAW ---

@@ -6,74 +6,89 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raylib Memory - Hard Mode</title>
     <style>
-        /* Leaderboard Styles */
-        #leaderboard {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.85);
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #00aeef;
-            width: 220px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5);
-            font-family: monospace;
-        }
-        #leaderboard h3 { margin: 0 0 10px 0; color: #00aeef; text-align: center; font-family: sans-serif; }
-        #score-list { list-style: none; padding: 0; margin: 0; }
-        #score-list li { 
-            padding: 6px; 
-            border-bottom: 1px solid #444; 
-            display: flex; 
-            justify-content: space-between;
-            color: #ccc;
-            font-size: 14px;
-        }
-        #score-list li:last-child { border-bottom: none; }
-        .score-val { color: #ffd700; font-weight: bold; }
-        .score-label { font-size: 10px; color: #666; vertical-align: middle; margin-left: 4px; }
-
         body { 
-            margin: 0; 
-            padding: 0; 
-            background-color: #111; 
-            color: #fff;
-            font-family: sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            overflow: hidden; /* Prevent scrolling if canvas gets big */
+            margin: 0; padding: 0; background-color: #111; color: #fff;
+            font-family: sans-serif; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; height: 100vh;
+            overflow: hidden;
         }
+
+        /* --- Canvas & Spinner --- */
         #canvas {
             border-radius: 4px;
             box-shadow: 0 0 30px rgba(0,0,0,0.6);
             image-rendering: pixelated;
-            max-width: 100%;
-            max-height: 100%;
+            max-width: 100%; max-height: 100%;
         }
         .spinner {
-            height: 30px;
-            width: 30px;
-            margin: 0px auto;
+            height: 30px; width: 30px; margin: 0px auto;
             animation: rotation 0.6s linear infinite;
             border-left: 6px solid rgba(0, 174, 239, 0.15);
             border-right: 6px solid rgba(0, 174, 239, 0.15);
             border-bottom: 6px solid rgba(0, 174, 239, 0.15);
             border-top: 6px solid rgba(0, 174, 239, 0.8);
             border-radius: 100%;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            margin-top: -15px;
-            margin-left: -15px;
-            z-index: 999;
+            position: absolute; top: 50%; left: 50%;
+            margin-top: -15px; margin-left: -15px; z-index: 999;
         }
-        @keyframes rotation {
-            from {transform: rotate(0deg);}
-            to {transform: rotate(359deg);}
+        @keyframes rotation { from {transform: rotate(0deg);} to {transform: rotate(359deg);} }
+
+        /* --- Leaderboard HUD --- */
+        #leaderboard {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(0, 0, 0, 0.85); padding: 15px;
+            border-radius: 8px; border: 1px solid #00aeef;
+            width: 220px; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            font-family: monospace; z-index: 10;
         }
+        #leaderboard h3 { margin: 0 0 10px 0; color: #00aeef; text-align: center; font-family: sans-serif; }
+        #score-list { list-style: none; padding: 0; margin: 0; }
+        #score-list li { 
+            padding: 6px; border-bottom: 1px solid #444; 
+            display: flex; justify-content: space-between;
+            color: #ccc; font-size: 14px;
+        }
+        #score-list li:last-child { border-bottom: none; }
+        .score-val { color: #ffd700; font-weight: bold; }
+        .score-label { font-size: 10px; color: #666; vertical-align: middle; margin-left: 4px; }
+
+        /* --- Custom Input Modal --- */
+        #input-modal {
+            display: none; /* Hidden by default */
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 1000;
+            align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        .modal-content {
+            background: #222; padding: 30px; border-radius: 8px;
+            border: 2px solid #444; text-align: center; width: 300px;
+        }
+        .modal-content h2 { margin-top: 0; color: #ffd700; }
+        
+        #player-name-input {
+            width: 100%; padding: 10px; margin-top: 15px;
+            font-size: 18px; text-align: center;
+            border: 2px solid #444; border-radius: 4px;
+            background: #111; color: white; outline: none;
+            transition: border-color 0.2s;
+        }
+
+        /* Dynamic Input Colors */
+        #player-name-input.match { border-color: #2ecc71; /* Green */ }
+        #player-name-input.new { border-color: #e74c3c; /* Red */ }
+
+        #match-status {
+            display: block; height: 20px; margin-top: 5px;
+            font-size: 12px; color: #888;
+        }
+
+        .btn-submit {
+            background: #00aeef; color: white; border: none;
+            padding: 10px 20px; font-size: 16px; border-radius: 4px;
+            cursor: pointer; margin-top: 15px; width: 100%;
+        }
+        .btn-submit:hover { background: #0095cc; }
     </style>
   </head>
   <body>
@@ -86,51 +101,68 @@
         </ul>
     </div>
 
+    <div id="input-modal">
+        <div class="modal-content">
+            <h2>You Won!</h2>
+            <div style="font-size: 40px; color: #00aeef; font-weight:bold;" id="modal-score">0</div>
+            <p>Moves</p>
+            
+            <input type="text" id="player-name-input" placeholder="Enter Name" maxlength="10" autocomplete="off">
+            <span id="match-status"></span>
+            
+            <button class="btn-submit" onclick="submitScore()">Submit Score</button>
+        </div>
+    </div>
+
     <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex=-1></canvas>
     
     <script type='text/javascript'>
       var Module = {
-        print: (function() {
-          return function(text) {
-            console.log(text);
-          };
-        })(),
+        print: (function() { return function(text) { console.log(text); }; })(),
         canvas: document.getElementById('canvas'),
-        setStatus: function(text) {
-          if (!text) return;
-          console.log("Status: " + text);
-        },
+        setStatus: function(text) { if (!text) return; console.log("Status: " + text); },
         onRuntimeInitialized: function() {
             document.getElementById('spinner').style.display = 'none';
             document.getElementById('canvas').focus();
         }
       };
 
-      // --- DREAMLO CONFIGURATION ---
-      // NOTE: Ensure your dreamlo keys are still valid
+      // --- CONFIGURATION ---
       const PRIVATE_KEY = "FmD-OFRIfUiqAQRcOJfgIwXF4CTJUP2kyktm0h6ad4eQ"; 
       const PUBLIC_KEY  = "692222898f40bb186436a661";  
       const BASE_URL = "https://www.dreamlo.com/lb/";
 
-      // 1. Fetch Scores
+      // Cache for existing players: { "name": score }
+      let playersCache = {};
+      let currentPendingScore = 0;
+
+      // 1. Fetch Scores and Build Cache
       function renderScores() {
           const list = document.getElementById('score-list');
-          if (!list) return;
-
-          // '/json-asc' -> Sorts ASCENDING (Lowest score is #1). 
-          // Perfect for "Moves" count.
+          
           fetch(`${BASE_URL}${PUBLIC_KEY}/json-asc`)
               .then(response => response.json())
               .then(data => {
+                  // Reset Cache
+                  playersCache = {};
+                  
                   list.innerHTML = '';
                   if (!data.dreamlo.leaderboard) {
                       list.innerHTML = '<li style="color:#888;">No scores yet!</li>';
                       return;
                   }
+
                   let entries = data.dreamlo.leaderboard.entry;
                   if (!Array.isArray(entries)) { entries = [entries]; }
-                  const topScores = entries.slice(0, 5);
 
+                  // Populate Cache for Live Search
+                  entries.forEach(e => {
+                      // Normalize name for matching
+                      playersCache[e.name.toLowerCase()] = parseInt(e.score);
+                  });
+
+                  // Display Top 5
+                  const topScores = entries.slice(0, 5);
                   topScores.forEach((entry, index) => {
                       const li = document.createElement('li');
                       li.innerHTML = `
@@ -144,39 +176,122 @@
                   });
               })
               .catch(err => {
-                  console.error("Error fetching scores:", err);
+                  console.error("Error:", err);
                   list.innerHTML = '<li style="color:red;">Offline</li>';
               });
       }
 
-      // C++ Calls this on startup/reset
+      // 2. Open Modal (Called from C++)
+      window.updateLeaderboard = function(score) {
+          currentPendingScore = score;
+          const modal = document.getElementById('input-modal');
+          const input = document.getElementById('player-name-input');
+          const scoreDisplay = document.getElementById('modal-score');
+          
+          // Populate Score
+          scoreDisplay.innerText = score;
+          
+          // Pre-fill name from Local Storage
+          const cachedName = localStorage.getItem('memory_game_name');
+          if (cachedName) {
+              input.value = cachedName;
+              validateInput(cachedName); // Run validation check immediately
+          } else {
+              input.value = "";
+              validateInput("");
+          }
+
+          // Show Modal
+          modal.style.display = 'flex';
+          input.focus();
+      };
+
+      // 3. Live Input Validation
+      const nameInput = document.getElementById('player-name-input');
+      const statusSpan = document.getElementById('match-status');
+
+      function validateInput(val) {
+          const cleanVal = val.trim().toLowerCase();
+          
+          if (cleanVal.length === 0) {
+              nameInput.className = ""; // Neutral
+              statusSpan.innerText = "";
+              return;
+          }
+
+          if (playersCache.hasOwnProperty(cleanVal)) {
+              // MATCH FOUND
+              nameInput.className = "match";
+              statusSpan.style.color = "#2ecc71";
+              
+              const oldScore = playersCache[cleanVal];
+              if (currentPendingScore < oldScore) {
+                  statusSpan.innerText = `Existing Found. New Personal Best! (${oldScore} → ${currentPendingScore})`;
+              } else {
+                  statusSpan.innerText = `Existing Found. Best remains: ${oldScore}`;
+              }
+          } else {
+              // NO MATCH (New)
+              nameInput.className = "new";
+              statusSpan.style.color = "#e74c3c";
+              statusSpan.innerText = "New Player Profile";
+          }
+      }
+
+      nameInput.addEventListener('keyup', (e) => {
+          validateInput(e.target.value);
+          if (e.key === "Enter") submitScore();
+      });
+
+      // 4. Submit Logic
+      window.submitScore = function() {
+          let rawName = nameInput.value;
+          if (!rawName) return;
+
+          // Clean name
+          let cleanName = rawName.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10);
+          if (cleanName.length === 0) cleanName = "Guest";
+
+          // Save to LocalStorage for next time
+          localStorage.setItem('memory_game_name', cleanName);
+
+          // Logic: Update only if better
+          const lowerName = cleanName.toLowerCase();
+          let shouldUpdate = true;
+
+          if (playersCache.hasOwnProperty(lowerName)) {
+              const oldScore = playersCache[lowerName];
+              // In "Moves" game, Lower is Better.
+              // If new score is >= old score, do not update.
+              if (currentPendingScore >= oldScore) {
+                  shouldUpdate = false;
+                  console.log("Score not improved. Skipping update.");
+              }
+          }
+
+          const modal = document.getElementById('input-modal');
+          modal.style.display = 'none';
+          document.getElementById('canvas').focus();
+
+          if (shouldUpdate) {
+              // URL: /add/Name/Score/Seconds/Text
+              const url = `${BASE_URL}${PRIVATE_KEY}/add/${cleanName}/${currentPendingScore}/0`;
+              fetch(url)
+                  .then(() => { renderScores(); })
+                  .catch(err => console.error("Error sending score:", err));
+          } else {
+              // Even if we don't update the DB, we should refresh the UI
+              // in case other players have played in the meantime.
+              renderScores(); 
+          }
+      };
+
       window.refreshLeaderboard = function() {
           renderScores();
       }
 
-      // C++ Calls this on Game Over
-      window.updateLeaderboard = function(score) {
-          let playerName = prompt(`You won in ${score} moves! Enter name:`, "Player");
-          if (!playerName) return; // Cancelled
-          
-          playerName = playerName.replace(/[^a-zA-Z0-9]/g, ""); 
-          if (playerName.length > 10) playerName = playerName.substring(0, 10);
-          if (playerName.length === 0) playerName = "Guest";
-
-          // URL: /add/Name/Score/Seconds/Text
-          const url = `${BASE_URL}${PRIVATE_KEY}/add/${playerName}/${score}/0`;
-
-          fetch(url)
-              .then(() => { renderScores(); })
-              .catch(err => console.error("Error sending score:", err));
-      };
-
       // Initial Load
-      var lb = document.getElementById('leaderboard');
-      if(lb) {
-          lb.style.display = 'block';
-          renderScores();
-      }
+      renderScores();
     </script>
     {{{ SCRIPT }}}
   </body>
