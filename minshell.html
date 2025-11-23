@@ -274,11 +274,24 @@
           document.getElementById('canvas').focus();
 
           if (shouldUpdate) {
-              // URL: /add/Name/Score/Seconds/Text
-              const url = `${BASE_URL}${PRIVATE_KEY}/add/${cleanName}/${currentPendingScore}/0`;
-              fetch(url)
-                  .then(() => { renderScores(); })
-                  .catch(err => console.error("Error sending score:", err));
+              const deleteUrl = `${BASE_URL}${PRIVATE_KEY}/delete/${cleanName}`;
+              const addUrl = `${BASE_URL}${PRIVATE_KEY}/add/${cleanName}/${currentPendingScore}/0`;
+              
+              // 1. Delete the old score (if it exists)
+              fetch(deleteUrl)
+                  .then(response => {
+                      if (!response.ok) {
+                          console.warn("Delete might have failed or name didn't exist, proceeding to add.");
+                      }
+                      // 2. Add the new (better) score
+                      return fetch(addUrl);
+                  })
+                  .then(() => { 
+                      console.log("Score deleted and added successfully.");
+                      renderScores(); 
+                  })
+                  .catch(err => console.error("Error updating score sequence:", err));
+
           } else {
               // Even if we don't update the DB, we should refresh the UI
               // in case other players have played in the meantime.

@@ -349,7 +349,6 @@ void UpdateDrawFrame() {
                 InitGame();
             }
             break;
-            
     }
 
     // --- DRAW ---
