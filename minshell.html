@@ -210,6 +210,12 @@
       const nameInput = document.getElementById('player-name-input');
       const statusSpan = document.getElementById('match-status');
 
+      // Stop key events from bubbling up to Raylib/Emscripten
+      // This prevents the game from intercepting Backspace, Arrow keys, or 'P' (Pause)
+      nameInput.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+      });
+
       function validateInput(val) {
           const cleanVal = val.trim().toLowerCase();
           
@@ -299,7 +305,7 @@
           }
       };
 
-      document.addEventListener('keydown', function(event) {
+      /* document.addEventListener('keydown', function(event) {
         // Check if the key pressed is Backspace (keyCode 8 or key 'Backspace')
         if (event.key === 'Backspace' || event.keyCode === 8) {
             // Check if the currently focused element is an INPUT, TEXTAREA, or is editable
@@ -316,7 +322,7 @@
                 event.preventDefault();
             }
         }
-      }, true);
+      }, true); */
 
       window.refreshLeaderboard = function() {
           renderScores();

@@ -347,13 +347,6 @@ void UpdateDrawFrame() {
                             if (cardSeen[c.gridIndex] && c.gridIndex != secondSelection->gridIndex) errorDetected = true;
                         }
                     }
-                    if (!errorDetected) {
-                        for (const auto& c : cards) {
-                            if (c.active && c.id == secondSelection->id && c.gridIndex != secondSelection->gridIndex) {
-                                if (cardSeen[c.gridIndex] && c.gridIndex != firstSelection->gridIndex) errorDetected = true;
-                            }
-                        }
-                    }
 
                     if (errorDetected) errors++;
 
