@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 #include <cmath>
-#include <cstdio> // Added for printf debugging
+#include <cstdio> 
 
 // Required for Web assembly compilation
 #if defined(PLATFORM_WEB)
@@ -90,6 +90,10 @@ int errors = 0;
 int totalPairs = 0;
 int finalScore = 0; 
 
+// --- New Timer Globals ---
+int gameTime = 0;           // Total seconds elapsed
+double timeAccumulator = 0.0; // Accumulates frame time to count seconds
+
 std::vector<bool> cardSeen; 
 
 // --- Function Prototypes ---
@@ -138,7 +142,6 @@ std::vector<KeyDefinition> GetKeyPool() {
 
 void InitGame() {
     currentState = STATE_MENU;
-    // Reset other globals just in case
     firstSelection = nullptr;
     secondSelection = nullptr;
 }
@@ -149,6 +152,11 @@ void StartGame(Difficulty diff) {
     moves = 0;
     errors = 0;
     finalScore = 0;
+    
+    // Reset Timer
+    gameTime = 0;
+    timeAccumulator = 0.0;
+
     firstSelection = nullptr;
     secondSelection = nullptr;
     currentDifficulty = diff;
@@ -217,7 +225,7 @@ void StartGame(Difficulty diff) {
         }
     }
     
-    currentState = STATE_PLAYING; // Ensure we switch state!
+    currentState = STATE_PLAYING; 
 
     #if defined(PLATFORM_WEB)
         RefreshLeaderboard();
@@ -229,6 +237,16 @@ void UpdateDrawFrame() {
     bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     bool enterPressed = IsKeyPressed(KEY_ENTER);
     float dt = GetFrameTime();
+
+    // --- TIMER LOGIC ---
+    // Only count up if the game is actively running (Playing or Waiting for match check)
+    if (currentState == STATE_PLAYING || currentState == STATE_WAITING) {
+        timeAccumulator += dt;
+        if (timeAccumulator >= 1.0) {
+            gameTime++;
+            timeAccumulator -= 1.0;
+        }
+    }
 
     // --- ANIMATION ---
     for (auto& card : cards) {
@@ -246,19 +264,14 @@ void UpdateDrawFrame() {
     // --- LOGIC ---
     switch (currentState) {
         case STATE_MENU: {
-            // Explicitly define buttons here for collision check
             Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
             Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
             Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
 
             if (mouseClicked) {
-                printf("Click detected in Menu at: %f, %f\n", mousePos.x, mousePos.y);
-                
                 if (CheckCollisionPointRec(mousePos, btnMedium)) {
-                    printf("Medium Clicked\n");
                     StartGame(DIFF_MEDIUM);
                 } else if (CheckCollisionPointRec(mousePos, btnHard)) {
-                    printf("Hard Clicked\n");
                     StartGame(DIFF_HARD);
                 } else if (CheckCollisionPointRec(mousePos, btnHelp)) {
                     currentState = STATE_HELP;
@@ -294,10 +307,8 @@ void UpdateDrawFrame() {
 
             // 2. Key Selection
             if (cardToSelect == nullptr) {
-                // Optimize: Iterate all active cards and check their specific key
                 for (auto& card : cards) {
                     if (card.active && !card.matched && !card.flipped) {
-                         // Raylib IsKeyPressed checks the queue for that specific key code
                          if (IsKeyPressed(card.assignedKey)) {
                              cardToSelect = &card;
                              break; 
@@ -333,7 +344,8 @@ void UpdateDrawFrame() {
                     if (matchesFound >= totalPairs) {
                         currentState = STATE_GAMEOVER;
                         float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 1.5f : 1.0f;
-                        finalScore = (int)((float)(moves + errors) * multiplier);
+                        // Score Calculation now includes gameTime
+                        finalScore = (int)((float)(moves + errors + gameTime) * multiplier);
                         SaveScoreToBrowser(finalScore);
                     } else {
                         currentState = STATE_PLAYING;
@@ -377,7 +389,6 @@ void UpdateDrawFrame() {
         Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
         Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
         
-        // Use CheckCollision for hover effects (calculated every frame)
         Color medColor = CheckCollisionPointRec(mousePos, btnMedium) ? SKYBLUE : LIGHTGRAY;
         Color hardColor = CheckCollisionPointRec(mousePos, btnHard) ? PINK : LIGHTGRAY;
         Color helpColor = CheckCollisionPointRec(mousePos, btnHelp) ? GOLD : LIGHTGRAY;
@@ -402,22 +413,32 @@ void UpdateDrawFrame() {
         DrawText("- Try to match pairs with the fewest moves.", x, y, fontSize, DARKGRAY); y += spacing;
         y += 10;
         DrawText("SCORING (Lower is Better!):", x, y, 22, GOLD); y += spacing;
-        DrawText("Score = (Moves + Errors) x Difficulty Multiplier", x + 20, y, fontSize, DARKGRAY); y += spacing;
+        // Updated help text
+        DrawText("Score = (Moves + Errors + Time) x Difficulty", x + 20, y, fontSize, DARKGRAY); y += spacing;
         DrawText("- Moves: Every pair of cards you flip.", x + 20, y, fontSize, DARKGRAY); y += spacing;
-        DrawText("- Errors: Flipping a card you have seen before", x + 20, y, fontSize, RED); y += 22;
-        DrawText("  but failing to match it.", x + 40, y, fontSize, RED); y += spacing + 10;
+        DrawText("- Errors: Flipping a known card incorrectly.", x + 20, y, fontSize, RED); y += spacing;
+        DrawText("- Time: Seconds taken to finish.", x + 20, y, fontSize, DARKGREEN); y += spacing + 10;
+
         DrawText("Hard Mode has no multiplier (1.0x).", x, y, fontSize, DARKGRAY); y += spacing;
         DrawText("Medium Mode has a penalty multiplier (1.5x).", x, y, fontSize, DARKGRAY); y += spacing;
         DrawText("Click or Press Enter to return", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to return", 20)/2, 530, 20, LIGHTGRAY);
     }
     else if (currentState == STATE_GAMEOVER) {
         DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 130, 60, GOLD);
-        const char* movesText = TextFormat("Moves: %i   Errors: %i", moves, errors);
-        DrawText(movesText, SCREEN_WIDTH/2 - MeasureText(movesText, 24)/2, 220, 24, DARKGRAY);
+        
+        // Updated Game Over Stats
+        const char* statsText = TextFormat("Moves: %i   Errors: %i   Time: %is", moves, errors, gameTime);
+        DrawText(statsText, SCREEN_WIDTH/2 - MeasureText(statsText, 24)/2, 220, 24, DARKGRAY);
+        
         const char* scoreText = TextFormat("FINAL SCORE: %i", finalScore);
         DrawText(scoreText, SCREEN_WIDTH/2 - MeasureText(scoreText, 40)/2, 270, 40, SKYBLUE);
-        if (currentDifficulty == DIFF_MEDIUM) DrawText("(Moves + Errors) x 1.5", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors) x 1.5", 20)/2, 320, 20, LIGHTGRAY);
-        else DrawText("(Moves + Errors) x 1.0", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors) x 1.0", 20)/2, 320, 20, LIGHTGRAY);
+        
+        // Updated formula visualization
+        if (currentDifficulty == DIFF_MEDIUM) 
+            DrawText("(Moves + Errors + Time) x 1.5", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors + Time) x 1.5", 20)/2, 320, 20, LIGHTGRAY);
+        else 
+            DrawText("(Moves + Errors + Time) x 1.0", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors + Time) x 1.0", 20)/2, 320, 20, LIGHTGRAY);
+        
         DrawText("Click or Press Enter to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to Return to Menu", 20)/2, 450, 20, LIGHTGRAY);
     }
     else {
@@ -425,6 +446,8 @@ void UpdateDrawFrame() {
         for (const auto& card : cards) DrawCard(card);
         DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
         DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
+        // Added Timer Display
+        DrawText(TextFormat("Time: %i", gameTime), 20, 70, 20, DARKGREEN);
         
         Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 70, 30 };
         Color btnColor = CheckCollisionPointRec(mousePos, btnMenu) ? MAROON : DARKGRAY;
