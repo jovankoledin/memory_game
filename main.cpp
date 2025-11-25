@@ -343,7 +343,7 @@ void UpdateDrawFrame() {
                     matchesFound++;
                     if (matchesFound >= totalPairs) {
                         currentState = STATE_GAMEOVER;
-                        float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 1.5f : 1.0f;
+                        float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 2.0f : 1.0f;
                         // Score Calculation now includes gameTime
                         finalScore = (int)((float)(moves + errors + gameTime) * multiplier);
                         SaveScoreToBrowser(finalScore);
@@ -409,7 +409,7 @@ void UpdateDrawFrame() {
         DrawText("HOW TO PLAY", SCREEN_WIDTH/2 - MeasureText("HOW TO PLAY", 40)/2, 60, 40, SKYBLUE);
         int y = 140, x = 100, fontSize = 20, spacing = 35;
 
-        DrawText("- Type the key shown on the card to flip it.", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Click on the card or type the key shown on the card to flip it.", x, y, fontSize, DARKGRAY); y += spacing;
         DrawText("- Try to match pairs with the fewest moves.", x, y, fontSize, DARKGRAY); y += spacing;
         y += 10;
         DrawText("SCORING (Lower is Better!):", x, y, 22, GOLD); y += spacing;
@@ -420,7 +420,7 @@ void UpdateDrawFrame() {
         DrawText("- Time: Seconds taken to finish.", x + 20, y, fontSize, DARKGREEN); y += spacing + 10;
 
         DrawText("Hard Mode has no multiplier (1.0x).", x, y, fontSize, DARKGRAY); y += spacing;
-        DrawText("Medium Mode has a penalty multiplier (1.5x).", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("Medium Mode has a penalty multiplier (2.0x).", x, y, fontSize, DARKGRAY); y += spacing;
         DrawText("Click or Press Enter to return", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to return", 20)/2, 530, 20, LIGHTGRAY);
     }
     else if (currentState == STATE_GAMEOVER) {
@@ -435,7 +435,7 @@ void UpdateDrawFrame() {
         
         // Updated formula visualization
         if (currentDifficulty == DIFF_MEDIUM) 
-            DrawText("(Moves + Errors + Time) x 1.5", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors + Time) x 1.5", 20)/2, 320, 20, LIGHTGRAY);
+            DrawText("(Moves + Errors + Time) x 2.0", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors + Time) x 2.0", 20)/2, 320, 20, LIGHTGRAY);
         else 
             DrawText("(Moves + Errors + Time) x 1.0", SCREEN_WIDTH/2 - MeasureText("(Moves + Errors + Time) x 1.0", 20)/2, 320, 20, LIGHTGRAY);
         
