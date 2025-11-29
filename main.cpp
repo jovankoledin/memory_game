@@ -294,6 +294,7 @@ void UpdateDrawFrame() {
             }
 
             Card* cardToSelect = nullptr;
+            bool isKeySelection = false; // <<< ADDED: Flag to detect key selection
 
             // 1. Mouse Selection
             if (mouseClicked) {
@@ -311,6 +312,7 @@ void UpdateDrawFrame() {
                     if (card.active && !card.matched && !card.flipped) {
                          if (IsKeyPressed(card.assignedKey)) {
                              cardToSelect = &card;
+                             isKeySelection = true; // <<< ADDED: Set flag for key selection
                              break; 
                          }
                     }
@@ -321,6 +323,10 @@ void UpdateDrawFrame() {
                 if (!cardToSelect->matched && !cardToSelect->flipped && cardToSelect->flipProgress < 0.5f) {
                     cardToSelect->flipped = true;
                     cardSeen[cardToSelect->gridIndex] = true;
+                    
+                    if (isKeySelection) { // <<< ADDED: Instant flip for key selection
+                        cardToSelect->flipProgress = 1.0f;
+                    }
                     
                     if (!firstSelection) {
                         firstSelection = cardToSelect;
