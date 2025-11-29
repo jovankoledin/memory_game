@@ -1,0 +1,412 @@
+#include "MemoryGame.h"
+#include "js_interop.h"
+
+#include <algorithm>
+#include <random>
+#include <cmath>
+#include <cstdio>
+
+// Constants
+const int SCREEN_WIDTH = 800; // Needed for centering
+const int SCREEN_HEIGHT = 600;
+const int CARD_SIZE = 90; 
+const int CARD_SPACING = 15;
+const float FLIP_SPEED = 6.0f;
+const Color CARD_COLORS[] = {
+    RED, ORANGE, YELLOW, GREEN, SKYBLUE, BLUE, PURPLE, PINK,
+    LIME, GOLD, MAROON, DARKBLUE
+};
+
+// Forward declaration of JS/Main functions
+// In a larger project, these would be in a "PlatformServices.h" interface
+// In MemoryGame.cpp (Forward declaration)
+extern void SaveScoreToBrowser(int score, int sortOrder);
+extern void RefreshLeaderboard();
+
+void MemoryGame::Init() {
+    state = MEM_MENU;
+    firstSelection = nullptr;
+    secondSelection = nullptr;
+    requestExit = false; // NEW: Initialize the exit flag
+}
+
+bool MemoryGame::IsActive() {
+    // We are active if we have NOT requested an exit
+    return !requestExit; 
+}
+
+void MemoryGame::ReturnToMenu() {
+    // Called by main.cpp when returning to APP_MAIN_MENU. Resets the state for next time.
+    state = MEM_MENU;
+    requestExit = false; // NEW: Reset the flag
+}
+
+std::vector<KeyDefinition> MemoryGame::GetKeyPool() {
+    std::vector<KeyDefinition> pool;
+    for (int i = 0; i <= 9; i++) {
+        KeyDefinition k;
+        k.key = (KeyboardKey)(KEY_ZERO + i);
+        k.label[0] = '0' + i;
+        k.label[1] = '\0';
+        pool.push_back(k);
+    }
+    for (int i = 0; i < 26; i++) {
+        KeyDefinition k;
+        k.key = (KeyboardKey)(KEY_A + i);
+        k.label[0] = 'A' + i;
+        k.label[1] = '\0';
+        pool.push_back(k);
+    }
+    return pool;
+}
+
+void MemoryGame::StartGame(MemoryDifficulty diff) {
+    cards.clear();
+    matchesFound = 0;
+    moves = 0;
+    errors = 0;
+    finalScore = 0;
+    gameTime = 0;
+    timeAccumulator = 0.0;
+    firstSelection = nullptr;
+    secondSelection = nullptr;
+    currentDifficulty = diff;
+    
+    int rows = (diff == DIFF_MEDIUM) ? 4 : 5;
+    int cols = (diff == DIFF_MEDIUM) ? 4 : 5;
+    totalPairs = (diff == DIFF_MEDIUM) ? 8 : 12;
+    cardSeen.assign(rows * cols, false);
+
+    std::vector<int> ids;
+    for (int i = 0; i < totalPairs; i++) {
+        ids.push_back(i);
+        ids.push_back(i);
+    }
+
+    std::vector<KeyDefinition> keyPool = GetKeyPool();
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(ids.begin(), ids.end(), g);
+    std::shuffle(keyPool.begin(), keyPool.end(), g);
+
+    int gridWidth = (cols * CARD_SIZE) + ((cols - 1) * CARD_SPACING);
+    int gridHeight = (rows * CARD_SIZE) + ((rows - 1) * CARD_SPACING);
+    int offsetX = (SCREEN_WIDTH - gridWidth) / 2;
+    int offsetY = (SCREEN_HEIGHT - gridHeight) / 2;
+
+    int idCounter = 0;
+    int keyCounter = 0;
+
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            Card c;
+            c.rect = {
+                (float)(offsetX + x * (CARD_SIZE + CARD_SPACING)),
+                (float)(offsetY + y * (CARD_SIZE + CARD_SPACING)),
+                (float)CARD_SIZE, (float)CARD_SIZE
+            };
+            c.gridIndex = (y * cols) + x;
+            c.flipped = false;
+            c.matched = false;
+            c.flipProgress = 0.0f; 
+            
+            bool isCenter = (diff == DIFF_HARD && x == 2 && y == 2);
+            if (isCenter) {
+                c.active = false; c.id = -1; c.color = DARKGRAY;
+                c.assignedKey = KEY_NULL; c.keyLabel[0] = '\0';
+            } else {
+                c.active = true;
+                c.id = ids[idCounter++];
+                c.color = CARD_COLORS[c.id % 12]; 
+                if (keyCounter < keyPool.size()) {
+                    c.assignedKey = keyPool[keyCounter].key;
+                    c.keyLabel[0] = keyPool[keyCounter].label[0];
+                    c.keyLabel[1] = '\0';
+                    keyCounter++;
+                }
+            }
+            cards.push_back(c);
+        }
+    }
+    state = MEM_PLAYING; 
+    
+    // Call the external JS function
+    #if defined(PLATFORM_WEB)
+        RefreshLeaderboard();
+    #endif
+}
+
+void MemoryGame::Update() {
+    Vector2 mousePos = GetMousePosition();
+    bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    float dt = GetFrameTime();
+
+    // Timer Logic
+    if (state == MEM_PLAYING || state == MEM_WAITING) {
+        timeAccumulator += dt;
+        if (timeAccumulator >= 1.0) {
+            gameTime++;
+            timeAccumulator -= 1.0;
+        }
+    }
+
+    // Animation Logic
+    for (auto& card : cards) {
+        if (!card.active) continue;
+        float target = card.flipped ? 1.0f : 0.0f;
+        if (card.flipProgress < target) {
+            card.flipProgress += dt * FLIP_SPEED;
+            if (card.flipProgress > target) card.flipProgress = target;
+        } else if (card.flipProgress > target) {
+            card.flipProgress -= dt * FLIP_SPEED;
+            if (card.flipProgress < target) card.flipProgress = target;
+        }
+    }
+
+    // This is where you would move the back/exit button logic.
+    // Setting requestExit = true replaces the direct appState change.
+    if (state == MEM_GAMEOVER) {
+        if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+            requestExit = true;
+            return;
+        }
+    }
+    
+    // **Example: Back button logic for when in MEM_PLAYING**
+    // Assumes coordinates match the Draw function
+    Rectangle btnBack = { 20, 20, 100, 30 }; 
+    if (mouseClicked && CheckCollisionPointRec(mousePos, btnBack)) {
+        requestExit = true; // Exit from playing
+        return;
+    }
+
+    switch (state) {
+        case MEM_MENU:
+            HandleMenuInput();
+            break;
+            
+        case MEM_HELP:
+            if (mouseClicked || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE)) state = MEM_MENU;
+            break;
+            
+        case MEM_PLAYING: {
+            Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 100, 30 };
+            if (mouseClicked && CheckCollisionPointRec(mousePos, btnMenu)) {
+                state = MEM_MENU;
+                return;
+            }
+            
+            Card* cardToSelect = nullptr;
+            bool isKeySelection = false; 
+
+            // Mouse Interaction
+            if (mouseClicked) {
+                for (auto& card : cards) {
+                    if (card.active && CheckCollisionPointRec(mousePos, card.rect)) {
+                        cardToSelect = &card;
+                        break;
+                    }
+                }
+            }
+            // Keyboard Interaction
+            if (cardToSelect == nullptr) {
+                for (auto& card : cards) {
+                    if (card.active && !card.matched && !card.flipped) {
+                         if (IsKeyPressed(card.assignedKey)) {
+                             cardToSelect = &card;
+                             isKeySelection = true;
+                             break; 
+                         }
+                    }
+                }
+            }
+            
+            // Logic if card selected
+            if (cardToSelect) {
+                if (!cardToSelect->matched && !cardToSelect->flipped && cardToSelect->flipProgress < 0.5f) {
+                    cardToSelect->flipped = true;
+                    cardSeen[cardToSelect->gridIndex] = true;
+                    if (isKeySelection) cardToSelect->flipProgress = 1.0f;
+                    
+                    if (!firstSelection) {
+                        firstSelection = cardToSelect;
+                    } else {
+                        secondSelection = cardToSelect;
+                        moves++;
+                        state = MEM_WAITING;
+                        waitTimer = GetTime();
+                    }
+                }
+            }
+            break;
+        }
+        case MEM_WAITING:
+            if (GetTime() - waitTimer > 0.8) { 
+                CheckMatch();
+            }
+            break;
+            
+        case MEM_GAMEOVER:
+            if (mouseClicked || IsKeyPressed(KEY_ENTER)) Init();
+            break;
+    }
+}
+
+void MemoryGame::CheckMatch() {
+    if (!firstSelection || !secondSelection) {
+        firstSelection = nullptr;
+        secondSelection = nullptr;
+        state = MEM_PLAYING;
+        return;
+    }
+    if (firstSelection->id == secondSelection->id) {
+        firstSelection->matched = true;
+        secondSelection->matched = true;
+        matchesFound++;
+        
+        if (matchesFound >= totalPairs) {
+            state = MEM_GAMEOVER;
+            float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 2.0f : 1.0f;
+            finalScore = (int)((float)(moves + errors + gameTime) * multiplier);
+            SaveScoreToBrowser(finalScore, 0); // 0 = Low is Good (Golf scoring)
+        } else {
+            state = MEM_PLAYING;
+        }
+    } else {
+        bool errorDetected = false;
+        for (const auto& c : cards) {
+            if (c.active && c.id == firstSelection->id && c.gridIndex != firstSelection->gridIndex) {
+                if (cardSeen[c.gridIndex] && c.gridIndex != secondSelection->gridIndex) errorDetected = true;
+            }
+        }
+        if (errorDetected) errors++;
+        firstSelection->flipped = false;
+        secondSelection->flipped = false;
+        state = MEM_PLAYING;
+    }
+    firstSelection = nullptr;
+    secondSelection = nullptr;
+}
+
+void MemoryGame::HandleMenuInput() {
+    Vector2 mousePos = GetMousePosition();
+    bool mouseClicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+    Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
+    Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+    Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
+    // We treat the back button as a signal to the main loop to switch states
+    // But since this class doesn't know about AppState, we just expose an "Active" state or
+    // handle the drawing here. The Main loop handles the actual exit.
+    
+    // NOTE: The "Back" button logic is handled in Draw for the UI, 
+    // but the state change relies on the Main loop checking this class or us setting a flag.
+    // For this refactor, we will rely on Draw returning a signal or Main checking a button overlap.
+    // However, to keep it contained:
+    
+    if (mouseClicked) {
+        if (CheckCollisionPointRec(mousePos, btnMedium)) StartGame(DIFF_MEDIUM);
+        else if (CheckCollisionPointRec(mousePos, btnHard)) StartGame(DIFF_HARD);
+        else if (CheckCollisionPointRec(mousePos, btnHelp)) state = MEM_HELP;
+    }
+}
+
+void MemoryGame::DrawCard(const Card& card) {
+    if (!card.active) return;
+    float animVal = card.flipProgress;
+    bool showFront = (animVal >= 0.5f);
+    float scaleX = fabsf(1.0f - (2.0f * animVal));
+    Rectangle r = card.rect;
+    float originalWidth = r.width;
+    r.width = originalWidth * scaleX;
+    r.x = card.rect.x + (originalWidth - r.width) / 2.0f;
+
+    if (showFront) {
+        if (card.matched) {
+            DrawRectangleRec(r, Fade(card.color, 0.3f));
+            DrawRectangleLinesEx(r, 2, Fade(card.color, 0.5f));
+        } else {
+            DrawRectangleRec(r, card.color);
+            DrawRectangleLinesEx(r, 3, WHITE);
+            DrawCircle(r.x + r.width/2, r.y + r.height/2, 10 * scaleX, WHITE);
+        }
+    } else {
+        DrawRectangleRec(r, DARKGRAY);
+        DrawRectangleLinesEx(r, 3, GRAY);
+        if (scaleX > 0.4f && !card.matched) {
+            int fontSize = 40;
+            int textWidth = MeasureText(card.keyLabel, fontSize);
+            DrawText(card.keyLabel, (int)(r.x + (r.width - textWidth * scaleX)/2), (int)(r.y + (r.height - fontSize)/2), fontSize, LIGHTGRAY);
+        }
+    }
+}
+
+void MemoryGame::Draw() {
+    Vector2 mousePos = GetMousePosition();
+
+    if (state == MEM_MENU) {
+        DrawText("MEMORY GAME", SCREEN_WIDTH/2 - MeasureText("MEMORY GAME", 60)/2, 130, 60, DARKGRAY);
+        
+        Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
+        Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
+        Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
+        Rectangle btnBack = { 20, 20, 100, 30 };
+        
+        Color medColor = CheckCollisionPointRec(mousePos, btnMedium) ? SKYBLUE : LIGHTGRAY;
+        Color hardColor = CheckCollisionPointRec(mousePos, btnHard) ? PINK : LIGHTGRAY;
+        Color helpColor = CheckCollisionPointRec(mousePos, btnHelp) ? GOLD : LIGHTGRAY;
+
+        DrawRectangleRec(btnMedium, medColor); DrawRectangleLinesEx(btnMedium, 2, DARKGRAY);
+        DrawText("Medium (4x4)", (int)btnMedium.x + 20, (int)btnMedium.y + 10, 24, DARKGRAY);
+
+        DrawRectangleRec(btnHard, hardColor); DrawRectangleLinesEx(btnHard, 2, DARKGRAY);
+        DrawText("Hard (5x5)", (int)btnHard.x + 35, (int)btnHard.y + 10, 24, DARKGRAY);
+
+        DrawRectangleRec(btnHelp, helpColor); DrawRectangleLinesEx(btnHelp, 2, DARKGRAY);
+        DrawText("HOW TO PLAY", (int)btnHelp.x + 20, (int)btnHelp.y + 10, 24, DARKGRAY);
+
+        // Draw Back Button
+        DrawRectangleRec(btnBack, LIGHTGRAY); DrawRectangleLinesEx(btnBack, 1, DARKGRAY);
+        DrawText("BACK", 45, 28, 10, DARKGRAY);
+        
+        // Note: The click handling for BACK is done in Main.cpp to switch AppState, 
+        // OR we can handle it here and expose a "ExitRequested" flag. 
+        // For simplicity in this architecture, Main.cpp checks this specific button.
+    } 
+    else if (state == MEM_HELP) {
+        DrawText("HOW TO PLAY", SCREEN_WIDTH/2 - MeasureText("HOW TO PLAY", 40)/2, 60, 40, SKYBLUE);
+        int y = 140, x = 100, fontSize = 20, spacing = 35;
+        DrawText("- Click on the card or type the key shown on the card to flip it.", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Try to match pairs with the fewest moves.", x, y, fontSize, DARKGRAY); y += spacing;
+        y += 10;
+        DrawText("SCORING (Lower is Better!):", x, y, 22, GOLD); y += spacing;
+        DrawText("Score = (Moves + Errors + Time) x Difficulty", x + 20, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Moves: Every pair of cards you flip.", x + 20, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("- Errors: Flipping a known card incorrectly.", x + 20, y, fontSize, RED); y += spacing;
+        DrawText("- Time: Seconds taken to finish.", x + 20, y, fontSize, DARKGREEN); y += spacing + 10;
+        DrawText("Hard Mode has no multiplier (1.0x).", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("Medium Mode has a penalty multiplier (2.0x).", x, y, fontSize, DARKGRAY); y += spacing;
+        DrawText("Click or Press Enter to return", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to return", 20)/2, 530, 20, LIGHTGRAY);
+    }
+    else if (state == MEM_GAMEOVER) {
+        DrawText("YOU WIN!", SCREEN_WIDTH/2 - MeasureText("YOU WIN!", 60)/2, 130, 60, GOLD);
+        const char* statsText = TextFormat("Moves: %i   Errors: %i   Time: %is", moves, errors, gameTime);
+        DrawText(statsText, SCREEN_WIDTH/2 - MeasureText(statsText, 24)/2, 220, 24, DARKGRAY);
+        const char* scoreText = TextFormat("FINAL SCORE: %i", finalScore);
+        DrawText(scoreText, SCREEN_WIDTH/2 - MeasureText(scoreText, 40)/2, 270, 40, SKYBLUE);
+        DrawText("Click or Press Enter to Return to Menu", SCREEN_WIDTH/2 - MeasureText("Click or Press Enter to Return to Menu", 20)/2, 450, 20, LIGHTGRAY);
+    }
+    else {
+        // Playing
+        for (const auto& card : cards) DrawCard(card);
+        DrawText(TextFormat("Moves: %i", moves), 20, 20, 20, DARKGRAY);
+        DrawText(TextFormat("Errors: %i", errors), 20, 45, 20, MAROON);
+        DrawText(TextFormat("Time: %i", gameTime), 20, 70, 20, DARKGREEN);
+        
+        Rectangle btnMenu = { (float)SCREEN_WIDTH - 120, 20, 70, 30 };
+        Color btnColor = CheckCollisionPointRec(mousePos, btnMenu) ? MAROON : DARKGRAY;
+        DrawRectangleRec(btnMenu, btnColor);
+        DrawRectangleLinesEx(btnMenu, 2, WHITE);
+        DrawText("MENU", (int)btnMenu.x + 8, (int)btnMenu.y + 8, 12, RAYWHITE);
+    }
+}

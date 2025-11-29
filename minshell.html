@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raylib Memory - Hard Mode</title>
+    <title>Raylib Game Arcade</title>
     <style>
         body { 
             margin: 0; padding: 0; background-color: #111; color: #fff;
@@ -191,8 +191,8 @@
           // Populate Score
           scoreDisplay.innerText = score;
           
-          // Pre-fill name from Local Storage
-          const cachedName = localStorage.getItem('memory_game_name');
+          // Pre-fill name from Local Storage (Updated to generic 'arcade_player_name')
+          const cachedName = localStorage.getItem('arcade_player_name');
           if (cachedName) {
               input.value = cachedName;
               validateInput(cachedName); // Run validation check immediately
@@ -260,8 +260,8 @@
           let cleanName = rawName.replace(/[^a-zA-Z0-9]/g, "").substring(0, 10);
           if (cleanName.length === 0) cleanName = "Guest";
 
-          // Save to LocalStorage for next time
-          localStorage.setItem('memory_game_name', cleanName);
+          // Save to LocalStorage for next time (Updated to generic key)
+          localStorage.setItem('arcade_player_name', cleanName);
 
           // Logic: Update only if better
           const lowerName = cleanName.toLowerCase();
@@ -269,8 +269,9 @@
 
           if (playersCache.hasOwnProperty(lowerName)) {
               const oldScore = playersCache[lowerName];
-              // In this game, Lower is Better.
-              // If new score is >= old score, do not update.
+              
+              // WARNING: This logic assumes "Lower is Better" (Memory Game).
+              // If you enable Sudoku scores (Higher is Better), you must change this logic.
               if (currentPendingScore >= oldScore) {
                   shouldUpdate = false;
                   console.log("Score not improved. Skipping update.");
