@@ -145,58 +145,53 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
     for (int idx : indices) {
         if (grid[idx].cageID != -1) continue; 
 
-        // 1. Collect all available neighbors
-        std::vector<int> neighbors;
+        // 1. Find neighbors
+        std::vector<int> freeNeighbors;
+        std::vector<int> occupiedNeighbors;
         int r = idx / 9, c = idx % 9;
         int dirs[] = {-9, 9, -1, 1};
+
         for(int d : dirs) {
             int nIdx = idx + d;
             if (nIdx < 0 || nIdx >= 81) continue;
             if (d == -1 && c == 0) continue;
             if (d == 1 && c == 8) continue;
-            if (grid[nIdx].cageID == -1) neighbors.push_back(nIdx);
+            
+            if (grid[nIdx].cageID == -1) freeNeighbors.push_back(nIdx);
+            else occupiedNeighbors.push_back(nIdx);
         }
 
-        // 2. If NO neighbors are free, FORCE a merge with an existing neighbor
-        if (neighbors.empty()) {
-            for(int d : dirs) {
-                int nIdx = idx + d;
-                if (nIdx < 0 || nIdx >= 81) continue;
-                if (d == -1 && c == 0) continue;
-                if (d == 1 && c == 8) continue;
-                
-                int nCageID = grid[nIdx].cageID;
-                if (nCageID != -1) {
-                    grid[idx].cageID = nCageID;
-                    for(auto& cage : cages) {
-                        if(cage.id == nCageID) {
-                            cage.cellIndices.push_back(idx);
-                            cage.targetSum += grid[idx].value;
-                            break;
-                        }
+        // 2. If no free neighbors, MUST merge into an existing cage
+        if (freeNeighbors.empty()) {
+            if (!occupiedNeighbors.empty()) {
+                int nCageID = grid[occupiedNeighbors[0]].cageID;
+                grid[idx].cageID = nCageID;
+                for(auto& cage : cages) {
+                    if(cage.id == nCageID) {
+                        cage.cellIndices.push_back(idx);
+                        cage.targetSum += grid[idx].value;
+                        break;
                     }
-                    break;
                 }
             }
             continue; 
         }
 
-        // 3. Create new cage and GUARANTEE size 2
+        // 3. Create a new cage and IMMEDIATELY take one free neighbor to ensure size 2
         Cage newCage;
         newCage.id = currentCageID++;
         newCage.color = CAGE_COLORS[newCage.id % 6];
         
-        // Add start cell
+        // Add current cell
         newCage.cellIndices.push_back(idx);
         grid[idx].cageID = newCage.id;
 
-        // Force add a second cell
-        std::uniform_int_distribution<> dist(0, neighbors.size() - 1);
-        int secondIdx = neighbors[dist(rng)];
+        // Add the forced neighbor
+        int secondIdx = freeNeighbors[rng() % freeNeighbors.size()];
         newCage.cellIndices.push_back(secondIdx);
         grid[secondIdx].cageID = newCage.id;
 
-        // 4. Optional growth (Now starts from 2 cells up to target)
+        // 4. Try to grow further up to targetSize
         int targetSize = (rng() % (maxCageSize - 1)) + 2; 
         while ((int)newCage.cellIndices.size() < targetSize) {
             std::vector<int> growthPotentials;
@@ -204,10 +199,10 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
                 int currR = cIdx / 9, currC = cIdx % 9;
                 for(int d : dirs) {
                     int nIdx = cIdx + d;
-                    if (nIdx < 0 || nIdx >= 81) continue;
+                    if (nIdx < 0 || nIdx >= 81 || grid[nIdx].cageID != -1) continue;
                     if (d == -1 && currC == 0) continue;
                     if (d == 1 && currC == 8) continue;
-                    if (grid[nIdx].cageID == -1) growthPotentials.push_back(nIdx);
+                    growthPotentials.push_back(nIdx);
                 }
             }
             if (growthPotentials.empty()) break;
@@ -217,7 +212,7 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
             grid[nextCell].cageID = newCage.id;
         }
         
-        // Finalize Sum
+        // 5. Calculate sum and save
         newCage.targetSum = 0;
         for (int cIdx : newCage.cellIndices) newCage.targetSum += grid[cIdx].value;
         cages.push_back(newCage);
