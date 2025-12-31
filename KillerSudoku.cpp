@@ -143,103 +143,83 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
     std::shuffle(indices.begin(), indices.end(), rng);
 
     for (int idx : indices) {
-        if (grid[idx].cageID != -1) continue; // Already assigned
+        if (grid[idx].cageID != -1) continue; 
 
-        // 1. Find neighbors for the starting cell to ensure it CAN grow
-        std::vector<int> startNeighbors;
-        int r = idx / 9;
-        int c = idx % 9;
-        int dirs[] = {-9, 9, -1, 1}; // Up, Down, Left, Right
+        // 1. Collect all available neighbors
+        std::vector<int> neighbors;
+        int r = idx / 9, c = idx % 9;
+        int dirs[] = {-9, 9, -1, 1};
         for(int d : dirs) {
             int nIdx = idx + d;
-            // Boundary checks
+            if (nIdx < 0 || nIdx >= 81) continue;
             if (d == -1 && c == 0) continue;
             if (d == 1 && c == 8) continue;
-            if (nIdx >= 0 && nIdx < 81 && grid[nIdx].cageID == -1) {
-                startNeighbors.push_back(nIdx);
-            }
+            if (grid[nIdx].cageID == -1) neighbors.push_back(nIdx);
         }
 
-        // 2. Handle isolated cells (rare, but possible at the end of generation)
-        if (startNeighbors.empty()) {
-            // If no neighbors are free, merge this single cell into an existing adjacent cage
+        // 2. If NO neighbors are free, FORCE a merge with an existing neighbor
+        if (neighbors.empty()) {
             for(int d : dirs) {
                 int nIdx = idx + d;
+                if (nIdx < 0 || nIdx >= 81) continue;
                 if (d == -1 && c == 0) continue;
                 if (d == 1 && c == 8) continue;
-                if (nIdx >= 0 && nIdx < 81 && grid[nIdx].cageID != -1) {
-                    int neighborCageID = grid[nIdx].cageID;
-                    grid[idx].cageID = neighborCageID;
-                    // Update the existing cage object
+                
+                int nCageID = grid[nIdx].cageID;
+                if (nCageID != -1) {
+                    grid[idx].cageID = nCageID;
                     for(auto& cage : cages) {
-                        if(cage.id == neighborCageID) {
+                        if(cage.id == nCageID) {
                             cage.cellIndices.push_back(idx);
                             cage.targetSum += grid[idx].value;
                             break;
                         }
                     }
-                    break; 
+                    break;
                 }
             }
             continue; 
         }
 
-        // 3. Create new cage and force it to be at least size 2
+        // 3. Create new cage and GUARANTEE size 2
         Cage newCage;
         newCage.id = currentCageID++;
         newCage.color = CAGE_COLORS[newCage.id % 6];
         
-        // Add first cell
+        // Add start cell
         newCage.cellIndices.push_back(idx);
         grid[idx].cageID = newCage.id;
 
-        // Add second cell immediately to satisfy "at least 2"
-        std::uniform_int_distribution<> distStart(0, startNeighbors.size() - 1);
-        int secondCell = startNeighbors[distStart(rng)];
-        newCage.cellIndices.push_back(secondCell);
-        grid[secondCell].cageID = newCage.id;
+        // Force add a second cell
+        std::uniform_int_distribution<> dist(0, neighbors.size() - 1);
+        int secondIdx = neighbors[dist(rng)];
+        newCage.cellIndices.push_back(secondIdx);
+        grid[secondIdx].cageID = newCage.id;
 
-        // 4. Optional growth up to maxCageSize
-        int targetSize = (rng() % (maxCageSize - 1)) + 2; // Range [2, maxCageSize]
-        
-        for (int step = 2; step < targetSize; step++) {
-            std::vector<int> potentialNeighbors;
+        // 4. Optional growth (Now starts from 2 cells up to target)
+        int targetSize = (rng() % (maxCageSize - 1)) + 2; 
+        while ((int)newCage.cellIndices.size() < targetSize) {
+            std::vector<int> growthPotentials;
             for (int cIdx : newCage.cellIndices) {
-                int currR = cIdx / 9;
-                int currC = cIdx % 9;
-                
-                int neighborsToCheck[] = {cIdx-9, cIdx+9, cIdx-1, cIdx+1};
-                for(int nIdx : neighborsToCheck) {
+                int currR = cIdx / 9, currC = cIdx % 9;
+                for(int d : dirs) {
+                    int nIdx = cIdx + d;
                     if (nIdx < 0 || nIdx >= 81) continue;
-                    if ((nIdx == cIdx - 1) && currC == 0) continue;
-                    if ((nIdx == cIdx + 1) && currC == 8) continue;
-                    
-                    if (grid[nIdx].cageID == -1) {
-                        potentialNeighbors.push_back(nIdx);
-                    }
+                    if (d == -1 && currC == 0) continue;
+                    if (d == 1 && currC == 8) continue;
+                    if (grid[nIdx].cageID == -1) growthPotentials.push_back(nIdx);
                 }
             }
+            if (growthPotentials.empty()) break;
             
-            if (potentialNeighbors.empty()) break;
-            
-            std::uniform_int_distribution<> dist(0, potentialNeighbors.size() - 1);
-            int nextCell = potentialNeighbors[dist(rng)];
-            
-            // Avoid adding duplicates if multiple cage cells share a neighbor
-            bool alreadyAdded = false;
-            for(int existing : newCage.cellIndices) if(existing == nextCell) alreadyAdded = true;
-            
-            if(!alreadyAdded) {
-                newCage.cellIndices.push_back(nextCell);
-                grid[nextCell].cageID = newCage.id;
-            }
+            int nextCell = growthPotentials[rng() % growthPotentials.size()];
+            newCage.cellIndices.push_back(nextCell);
+            grid[nextCell].cageID = newCage.id;
         }
         
-        // Calculate Target Sum
+        // Finalize Sum
         newCage.targetSum = 0;
-        for (int cIdx : newCage.cellIndices) {
-            newCage.targetSum += grid[cIdx].value;
-        }
+        for (int cIdx : newCage.cellIndices) newCage.targetSum += grid[cIdx].value;
         cages.push_back(newCage);
     }
 }
