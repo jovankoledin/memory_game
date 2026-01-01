@@ -148,25 +148,21 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
 
     int dirs[] = {-9, 9, -1, 1};
 
-    // --- PHASE 1: MANDATORY PAIRING ---
-    // Every cell we visit MUST either start a cage with a neighbor or join an existing one.
+    // --- PHASE 1: INITIAL GROWTH (Minimum 2 Cells) ---
     for (int idx : indices) {
         if (grid[idx].cageID != -1) continue; 
 
         int r = idx / 9, c = idx % 9;
         std::vector<int> freeNeighbors;
-        std::vector<int> existingCages;
 
         for(int d : dirs) {
             int nIdx = idx + d;
             if (nIdx < 0 || nIdx >= 81) continue;
-            if (c == 0 && d == -1) continue; // Left edge wrap protection
-            if (c == 8 && d == 1)  continue; // Right edge wrap protection
+            if (c == 0 && d == -1) continue; 
+            if (c == 8 && d == 1)  continue; 
             
             if (grid[nIdx].cageID == -1) {
                 freeNeighbors.push_back(nIdx);
-            } else {
-                existingCages.push_back(grid[nIdx].cageID);
             }
         }
 
@@ -182,14 +178,14 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
             newCage.cellIndices.push_back(idx);
             newCage.targetSum += grid[idx].value;
 
-            // Take a random neighbor immediately
+            // Take a random neighbor immediately to satisfy the "Size > 1" rule
             int neighborIdx = freeNeighbors[rng() % freeNeighbors.size()];
             grid[neighborIdx].cageID = newCage.id;
             newCage.cellIndices.push_back(neighborIdx);
             newCage.targetSum += grid[neighborIdx].value;
 
-            // Optional: Grow further up to maxCageSize
-            int targetSize = (rng() % (maxCageSize - 1)) + 2;
+            // Optional: Grow further up to maxCageSize if neighbors are available
+            int targetSize = (rng() % (maxCageSize - 1)) + 2; 
             while ((int)newCage.cellIndices.size() < targetSize) {
                 std::vector<int> potentials;
                 for (int cell : newCage.cellIndices) {
@@ -207,51 +203,33 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
                 newCage.targetSum += grid[nextIdx].value;
             }
             cages.push_back(newCage);
-        } 
-        else if (!existingCages.empty()) {
-            // No free neighbors? Forcibly merge into a neighbor's cage.
-            int targetID = existingCages[rng() % existingCages.size()];
-            for (auto& cage : cages) {
-                if (cage.id == targetID) {
-                    grid[idx].cageID = cage.id;
-                    cage.cellIndices.push_back(idx);
-                    cage.targetSum += grid[idx].value;
-                    break;
-                }
-            }
         }
     }
 
-    // --- PHASE 2: FINAL CAGE INTEGRITY CHECK ---
-    // If any logic error somehow produced a size-1 cage, merge it.
-    for (size_t i = 0; i < cages.size(); ++i) {
-        if (cages[i].cellIndices.size() < 2) {
-            int soloIdx = cages[i].cellIndices[0];
-            int c = soloIdx % 9;
-            bool merged = false;
-
+    // --- PHASE 2: ADOPTION FOR ORPHANS ---
+    // Any cell still at -1 had no free neighbors. It MUST join an existing neighbor's cage.
+    for (int i = 0; i < 81; i++) {
+        if (grid[i].cageID == -1) {
+            int r = i / 9, c = i % 9;
             for (int d : dirs) {
-                int nIdx = soloIdx + d;
+                int nIdx = i + d;
                 if (nIdx < 0 || nIdx >= 81 || (c == 0 && d == -1) || (c == 8 && d == 1)) continue;
                 
                 int targetID = grid[nIdx].cageID;
-                if (targetID != -1 && targetID != cages[i].id) {
-                    for (auto& targetCage : cages) {
-                        if (targetCage.id == targetID) {
-                            targetCage.cellIndices.push_back(soloIdx);
-                            targetCage.targetSum += grid[soloIdx].value;
-                            grid[soloIdx].cageID = targetID;
-                            merged = true;
-                            break;
+                if (targetID != -1) {
+                    // Find the cage object and add this orphan to it
+                    for (auto& cage : cages) {
+                        if (cage.id == targetID) {
+                            grid[i].cageID = targetID;
+                            cage.cellIndices.push_back(i);
+                            cage.targetSum += grid[i].value;
+                            goto next_orphan; // Successfully adopted
                         }
                     }
                 }
-                if (merged) break;
             }
-            // Remove the size-1 cage from the list
-            cages.erase(cages.begin() + i);
-            i--; 
         }
+        next_orphan:;
     }
 }
 
