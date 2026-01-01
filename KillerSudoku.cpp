@@ -134,55 +134,109 @@ bool KillerSudokuGame::GenerateFullSolution(int index) {
     return false;
 }
 
-void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
-    int maxCageSize = (diff == S_MEDIUM) ? 4 : 6;  // Slightly larger for variety
+void KillerSudokuGame::GenerateCages(SudokuDifficulty diff)
+{
+    int maxCageSize = (diff == S_MEDIUM) ? 4 : 6;  // Adjust for desired cage variety
     cages.clear();
     int currentCageID = 0;
 
-    for (int i = 0; i < 81; i++) {
+    // Reset all cells
+    for (int i = 0; i < 81; ++i) {
         grid[i].cageID = -1;
     }
 
+    // List of cells that are still available for new cages
     std::vector<int> availableCells;
-    for (int i = 0; i < 81; i++) availableCells.push_back(i);
+    for (int i = 0; i < 81; ++i) availableCells.push_back(i);
     std::shuffle(availableCells.begin(), availableCells.end(), rng);
 
-    int dirs[4] = {-1, 1, -9, 9};
+    const int dirs[4] = {-9, 9, -1, 1};  // up, down, left, right
 
     while (!availableCells.empty()) {
         int startIdx = availableCells.back();
         availableCells.pop_back();
 
-        if (grid[startIdx].cageID != -1) continue;  // Already claimed
+        // Skip if this cell was already claimed by a previous cage growth
+        if (grid[startIdx].cageID != -1) continue;
 
+        int r = startIdx / 9;
+        int c = startIdx % 9;
+
+        // ------------------------------------------------------------
+        // Case 1: No free (unassigned) neighbors → this cell is isolated
+        // ------------------------------------------------------------
+        std::vector<int> freeNeighbors;
+        for (int d : dirs) {
+            int nIdx = startIdx + d;
+            if (nIdx < 0 || nIdx >= 81) continue;
+            if (c == 0 && d == -1) continue;
+            if (c == 8 && d == 1)  continue;
+            if (grid[nIdx].cageID == -1) freeNeighbors.push_back(nIdx);
+        }
+
+        if (freeNeighbors.empty()) {
+            // Merge this orphan into one of its already-assigned neighbors
+            std::vector<int> assignedNeighborIDs;
+            for (int d : dirs) {
+                int nIdx = startIdx + d;
+                if (nIdx < 0 || nIdx >= 81) continue;
+                if (c == 0 && d == -1) continue;
+                if (c == 8 && d == 1)  continue;
+                int neighID = grid[nIdx].cageID;
+                if (neighID != -1) assignedNeighborIDs.push_back(neighID);
+            }
+
+            if (!assignedNeighborIDs.empty()) {
+                int mergeID = assignedNeighborIDs[rng() % assignedNeighborIDs.size()];
+                for (auto& cage : cages) {
+                    if (cage.id == mergeID) {
+                        cage.cellIndices.push_back(startIdx);
+                        cage.targetSum += grid[startIdx].value;
+                        grid[startIdx].cageID = mergeID;
+                        break;
+                    }
+                }
+            }
+            continue;  // Do not start a new cage here
+        }
+
+        // ------------------------------------------------------------
+        // Case 2: Has free neighbors → start a new cage (guaranteed ≥2 cells)
+        // ------------------------------------------------------------
         Cage newCage;
         newCage.id = currentCageID++;
         newCage.color = CAGE_COLORS[newCage.id % 6];
-        newCage.targetSum = 0;
+        newCage.targetSum = grid[startIdx].value;
 
         std::vector<int> cageCells;
         cageCells.push_back(startIdx);
         grid[startIdx].cageID = newCage.id;
-        newCage.targetSum += grid[startIdx].value;
 
-        // Decide cage size: 2 to maxCageSize
+        // Force-include at least one neighbor to ensure size ≥ 2
+        int neighIdx = freeNeighbors[rng() % freeNeighbors.size()];
+        cageCells.push_back(neighIdx);
+        grid[neighIdx].cageID = newCage.id;
+        newCage.targetSum += grid[neighIdx].value;
+
+        // Remove the forced neighbor from the available list
+        availableCells.erase(
+            std::remove(availableCells.begin(), availableCells.end(), neighIdx),
+            availableCells.end()
+        );
+
+        // Optional further growth
         int targetSize = 2 + (rng() % (maxCageSize - 1));
-
-        // Grow cage by adding random adjacent available cells
-        while ((int)cageCells.size() < targetSize && !availableCells.empty()) {
+        while ((int)cageCells.size() < targetSize) {
             std::vector<int> frontier;
             for (int cell : cageCells) {
-                int r = cell / 9;
-                int c = cell % 9;
+                int cr = cell / 9;
+                int cc = cell % 9;
                 for (int d : dirs) {
-                    int nr = cell + d;
-                    if (nr < 0 || nr >= 81) continue;
-                    if (c == 0 && d == -1) continue;
-                    if (c == 8 && d == 1) continue;
-                    if (grid[nr].cageID == -1) {
-                        // Still available
-                        frontier.push_back(nr);
-                    }
+                    int nIdx = cell + d;
+                    if (nIdx < 0 || nIdx >= 81) continue;
+                    if (cc == 0 && d == -1) continue;
+                    if (cc == 8 && d == 1)  continue;
+                    if (grid[nIdx].cageID == -1) frontier.push_back(nIdx);
                 }
             }
 
@@ -192,29 +246,71 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
             std::sort(frontier.begin(), frontier.end());
             frontier.erase(std::unique(frontier.begin(), frontier.end()), frontier.end());
 
-            // Pick one
             int next = frontier[rng() % frontier.size()];
-
-            // Remove from availableCells
-            availableCells.erase(std::remove(availableCells.begin(), availableCells.end(), next), availableCells.end());
+            availableCells.erase(
+                std::remove(availableCells.begin(), availableCells.end(), next),
+                availableCells.end()
+            );
 
             cageCells.push_back(next);
             grid[next].cageID = newCage.id;
             newCage.targetSum += grid[next].value;
         }
 
-        newCage.cellIndices = cageCells;
-        cages.push_back(newCage);
+        newCage.cellIndices = std::move(cageCells);
+        cages.push_back(std::move(newCage));
     }
 
-    // Optional debug check
-    #ifdef _DEBUG
-    for (const auto& cage : cages) {
-        if (cage.cellIndices.size() == 1) {
-            std::cout << "ERROR: Single cell cage created! Size: " << cage.cellIndices.size() << std::endl;
+    // ----------------------------------------------------------------
+    // Final safety net: eliminate any accidental single-cell cages
+    // (this should never trigger with the logic above, but it's bulletproof)
+    // ----------------------------------------------------------------
+    for (size_t i = 0; i < cages.size(); ) {
+        if (cages[i].cellIndices.size() < 2) {
+            int singleIdx = cages[i].cellIndices[0];
+            int r = singleIdx / 9;
+            int c = singleIdx % 9;
+
+            std::vector<int> adjacentCageIDs;
+            for (int d : dirs) {
+                int nIdx = singleIdx + d;
+                if (nIdx < 0 || nIdx >= 81) continue;
+                if (c == 0 && d == -1) continue;
+                if (c == 8 && d == 1)  continue;
+                int neighID = grid[nIdx].cageID;
+                if (neighID != -1 && neighID != cages[i].id) {
+                    adjacentCageIDs.push_back(neighID);
+                }
+            }
+
+            if (!adjacentCageIDs.empty()) {
+                int mergeIntoID = adjacentCageIDs[rng() % adjacentCageIDs.size()];
+                auto targetIt = std::find_if(cages.begin(), cages.end(),
+                    [mergeIntoID](const Cage& cg) { return cg.id == mergeIntoID; });
+
+                if (targetIt != cages.end()) {
+                    targetIt->cellIndices.push_back(singleIdx);
+                    targetIt->targetSum += grid[singleIdx].value;
+                    grid[singleIdx].cageID = mergeIntoID;
+                }
+            }
+
+            // Remove the now-empty single-cell cage
+            cages.erase(cages.begin() + i);
+            // Do not increment i – the next element has shifted into this position
+        } else {
+            ++i;
         }
     }
-    #endif
+
+#ifdef _DEBUG
+    // Debug verification
+    for (const auto& cage : cages) {
+        if (cage.cellIndices.size() < 2) {
+            std::cout << "WARNING: Single-cell cage still present (ID " << cage.id << ")!\n";
+        }
+    }
+#endif
 }
 
 void KillerSudokuGame::Update() {
