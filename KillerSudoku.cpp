@@ -175,29 +175,33 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff)
         }
 
         if (freeNeighbors.empty()) {
-            // Merge this orphan into one of its already-assigned neighbors
+            // Must merge, NEVER leave unassigned
             std::vector<int> assignedNeighborIDs;
             for (int d : dirs) {
                 int nIdx = startIdx + d;
                 if (nIdx < 0 || nIdx >= 81) continue;
                 if (c == 0 && d == -1) continue;
                 if (c == 8 && d == 1)  continue;
-                int neighID = grid[nIdx].cageID;
-                if (neighID != -1) assignedNeighborIDs.push_back(neighID);
+                if (grid[nIdx].cageID != -1)
+                    assignedNeighborIDs.push_back(grid[nIdx].cageID);
             }
 
-            if (!assignedNeighborIDs.empty()) {
-                int mergeID = assignedNeighborIDs[rng() % assignedNeighborIDs.size()];
-                for (auto& cage : cages) {
-                    if (cage.id == mergeID) {
-                        cage.cellIndices.push_back(startIdx);
-                        cage.targetSum += grid[startIdx].value;
-                        grid[startIdx].cageID = mergeID;
-                        break;
-                    }
-                }
+            // This MUST succeed — assert if it doesn't
+            if (assignedNeighborIDs.empty()) {
+                std::cerr << "FATAL: isolated cell with no neighbors\n";
+                continue;
             }
-            continue;  // Do not start a new cage here
+
+            int mergeID = assignedNeighborIDs[rng() % assignedNeighborIDs.size()];
+            Cage& target = *std::find_if(
+                cages.begin(), cages.end(),
+                [&](const Cage& c){ return c.id == mergeID; }
+            );
+
+            target.cellIndices.push_back(startIdx);
+            target.targetSum += grid[startIdx].value;
+            grid[startIdx].cageID = mergeID;
+            continue;
         }
 
         // ------------------------------------------------------------
@@ -259,48 +263,6 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff)
 
         newCage.cellIndices = std::move(cageCells);
         cages.push_back(std::move(newCage));
-    }
-
-    // ----------------------------------------------------------------
-    // Final safety net: eliminate any accidental single-cell cages
-    // (this should never trigger with the logic above, but it's bulletproof)
-    // ----------------------------------------------------------------
-    for (size_t i = 0; i < cages.size(); ) {
-        if (cages[i].cellIndices.size() < 2) {
-            int singleIdx = cages[i].cellIndices[0];
-            int r = singleIdx / 9;
-            int c = singleIdx % 9;
-
-            std::vector<int> adjacentCageIDs;
-            for (int d : dirs) {
-                int nIdx = singleIdx + d;
-                if (nIdx < 0 || nIdx >= 81) continue;
-                if (c == 0 && d == -1) continue;
-                if (c == 8 && d == 1)  continue;
-                int neighID = grid[nIdx].cageID;
-                if (neighID != -1 && neighID != cages[i].id) {
-                    adjacentCageIDs.push_back(neighID);
-                }
-            }
-
-            if (!adjacentCageIDs.empty()) {
-                int mergeIntoID = adjacentCageIDs[rng() % adjacentCageIDs.size()];
-                auto targetIt = std::find_if(cages.begin(), cages.end(),
-                    [mergeIntoID](const Cage& cg) { return cg.id == mergeIntoID; });
-
-                if (targetIt != cages.end()) {
-                    targetIt->cellIndices.push_back(singleIdx);
-                    targetIt->targetSum += grid[singleIdx].value;
-                    grid[singleIdx].cageID = mergeIntoID;
-                }
-            }
-
-            // Remove the now-empty single-cell cage
-            cages.erase(cages.begin() + i);
-            // Do not increment i – the next element has shifted into this position
-        } else {
-            ++i;
-        }
     }
 
 #ifdef _DEBUG
