@@ -167,7 +167,6 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
         }
 
         if (!freeNeighbors.empty()) {
-            // Start a new cage and FORCIBLY take a neighbor to guarantee size >= 2
             Cage newCage;
             newCage.id = currentCageID++;
             newCage.color = CAGE_COLORS[newCage.id % 6];
@@ -178,13 +177,13 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
             newCage.cellIndices.push_back(idx);
             newCage.targetSum += grid[idx].value;
 
-            // Take a random neighbor immediately to satisfy the "Size > 1" rule
+            // Force at least one neighbor
             int neighborIdx = freeNeighbors[rng() % freeNeighbors.size()];
             grid[neighborIdx].cageID = newCage.id;
             newCage.cellIndices.push_back(neighborIdx);
             newCage.targetSum += grid[neighborIdx].value;
 
-            // Optional: Grow further up to maxCageSize if neighbors are available
+            // Grow further randomly
             int targetSize = (rng() % (maxCageSize - 1)) + 2; 
             while ((int)newCage.cellIndices.size() < targetSize) {
                 std::vector<int> potentials;
@@ -206,31 +205,70 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff) {
         }
     }
 
-    // --- PHASE 2: ADOPTION FOR ORPHANS ---
-    // Any cell still at -1 had no free neighbors. It MUST join an existing neighbor's cage.
-    for (int i = 0; i < 81; i++) {
-        if (grid[i].cageID == -1) {
+    // --- PHASE 2: Fix any remaining single cells (orphans) ---
+    // Some cells may still be unassigned if they had no free neighbors at the time.
+    // We now force them into adjacent cages.
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int i = 0; i < 81; i++) {
+            if (grid[i].cageID != -1) continue; // Already in a cage
+
             int r = i / 9, c = i % 9;
+            std::vector<int> candidateCageIDs;
+
+            // Look at all 4 possible neighbors
             for (int d : dirs) {
                 int nIdx = i + d;
-                if (nIdx < 0 || nIdx >= 81 || (c == 0 && d == -1) || (c == 8 && d == 1)) continue;
-                
-                int targetID = grid[nIdx].cageID;
-                if (targetID != -1) {
-                    // Find the cage object and add this orphan to it
-                    for (auto& cage : cages) {
-                        if (cage.id == targetID) {
-                            grid[i].cageID = targetID;
-                            cage.cellIndices.push_back(i);
-                            cage.targetSum += grid[i].value;
-                            goto next_orphan; // Successfully adopted
-                        }
+                if (nIdx < 0 || nIdx >= 81) continue;
+                if (c == 0 && d == -1) continue;
+                if (c == 8 && d == 1) continue;
+
+                int neighborCage = grid[nIdx].cageID;
+                if (neighborCage != -1) {
+                    candidateCageIDs.push_back(neighborCage);
+                }
+            }
+
+            if (!candidateCageIDs.empty()) {
+                // Pick a random neighboring cage to join
+                int chosenID = candidateCageIDs[rng() % candidateCageIDs.size()];
+                for (auto& cage : cages) {
+                    if (cage.id == chosenID) {
+                        grid[i].cageID = chosenID;
+                        cage.cellIndices.push_back(i);
+                        cage.targetSum += grid[i].value;
+                        changed = true;
+                        break;
                     }
                 }
             }
         }
-        next_orphan:;
     }
+
+    // --- FINAL SAFETY CHECK (Optional, for debugging) ---
+    // This should never trigger if the above works
+    for (int i = 0; i < 81; i++) {
+        if (grid[i].cageID == -1) {
+            // Emergency: assign to cage 0 if something went horribly wrong
+            if (!cages.empty()) {
+                int fallback = cages[0].id;
+                grid[i].cageID = fallback;
+                cages[0].cellIndices.push_back(i);
+                cages[0].targetSum += grid[i].value;
+            }
+        }
+    }
+
+    // Optional: verify no single-cell cages remain
+    #ifdef _DEBUG
+    for (const auto& cage : cages) {
+        if (cage.cellIndices.size() == 1) {
+            // This should not happen anymore
+            std::cout << "WARNING: Single cell cage detected! ID: " << cage.id << std::endl;
+        }
+    }
+    #endif
 }
 
 void KillerSudokuGame::Update() {
