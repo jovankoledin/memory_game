@@ -217,6 +217,7 @@ void KillerSudokuGame::DrawBoard() {
             const char* txt = TextFormat("%i", grid[i].currentInput);
             int txtW = MeasureText(txt, 30);
             DrawText(txt, x + (CELL_SIZE - txtW)/2, y + 10, 30, numColor);
+            ekgonajfsprokjio
         }
     }
 }
