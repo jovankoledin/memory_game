@@ -20,7 +20,7 @@ usually need the raylib source.
 
 3. Run this below command to compile the .wasm and index.html
 
-em++ -o index.html main.cpp KillerSudoku.cpp MemoryGame.cpp SequenceGame.cpp js_interop.cpp -Os -Wall -I \
+em++ -o index.html main.cpp KillerSudoku.cpp MemoryGame.cpp SequenceGame.cpp -Os -Wall -I \
 /mnt/c/Users/jk/Documents/memory/emsdk/upstream/emscripten/cache/sysroot/include \
 -L /mnt/c/Users/jk/Documents/memory/emsdk/upstream/emscripten/cache/sysroot/lib/libraylib.a -s USE_GLFW=3 -s ASYNCIFY \
 --shell-file minshell.html -DPLATFORM_WEB /mnt/c/Users/jk/Documents/memory/emsdk/upstream/emscripten/cache/sysroot/lib/libraylib.a

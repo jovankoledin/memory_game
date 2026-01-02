@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <string>
 #include <cstdio> // For TextFormat
-#include "js_interop.h" // To save scores
 
 // Configuration
 const int SEQ_GRID_COLS = 8;
@@ -122,9 +121,7 @@ void SequenceGame::Update() {
                         // Wrong click?
                         else {
                             state = SEQ_GAMEOVER;
-                            #if defined(PLATFORM_WEB)
-                            SaveScoreToBrowser(score, 1); // 1 = High Score is better
-                            #endif
+                            // Scoreboard save removed
                         }
                         break; 
                     }
@@ -152,7 +149,7 @@ void SequenceGame::Draw() {
     switch(state) {
         case SEQ_MENU: {
             DrawText("SEQUENCE MEMORY", 400 - MeasureText("SEQUENCE MEMORY", 40)/2, 150, 40, DARKGRAY);
-            DrawText("Click 1, then memorize the rest!", 400 - MeasureText("Click 1, then memorize the rest!", 20)/2, 210, 20, GRAY);
+            DrawText("Click the numbers in order!", 400 - MeasureText("Click the numbers in order!", 20)/2, 210, 20, GRAY);
             
             Rectangle btnStart = { 300, 300, 200, 60 };
             DrawRectangleRec(btnStart, SKYBLUE);

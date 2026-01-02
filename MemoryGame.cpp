@@ -1,5 +1,4 @@
 #include "MemoryGame.h"
-#include "js_interop.h"
 
 #include <algorithm>
 #include <random>
@@ -16,12 +15,6 @@ const Color CARD_COLORS[] = {
     RED, ORANGE, YELLOW, GREEN, SKYBLUE, BLUE, PURPLE, PINK,
     LIME, GOLD, MAROON, DARKBLUE
 };
-
-// Forward declaration of JS/Main functions
-// In a larger project, these would be in a "PlatformServices.h" interface
-// In MemoryGame.cpp (Forward declaration)
-extern void SaveScoreToBrowser(int score, int sortOrder);
-extern void RefreshLeaderboard();
 
 void MemoryGame::Init() {
     state = MEM_MENU;
@@ -130,10 +123,7 @@ void MemoryGame::StartGame(MemoryDifficulty diff) {
     }
     state = MEM_PLAYING; 
     
-    // Call the external JS function
-    #if defined(PLATFORM_WEB)
-        RefreshLeaderboard();
-    #endif
+    // Leaderboard refresh removed
 }
 
 void MemoryGame::Update() {
@@ -268,7 +258,7 @@ void MemoryGame::CheckMatch() {
             state = MEM_GAMEOVER;
             float multiplier = (currentDifficulty == DIFF_MEDIUM) ? 2.0f : 1.0f;
             finalScore = (int)((float)(moves + errors + gameTime) * multiplier);
-            SaveScoreToBrowser(finalScore, 0); // 0 = Low is Good (Golf scoring)
+            // Scoreboard save removed
         } else {
             state = MEM_PLAYING;
         }
@@ -295,14 +285,6 @@ void MemoryGame::HandleMenuInput() {
     Rectangle btnMedium = { (float)SCREEN_WIDTH/2 - 100, 250, 200, 50 };
     Rectangle btnHard = { (float)SCREEN_WIDTH/2 - 100, 320, 200, 50 };
     Rectangle btnHelp = { (float)SCREEN_WIDTH/2 - 100, 390, 200, 50 };
-    // We treat the back button as a signal to the main loop to switch states
-    // But since this class doesn't know about AppState, we just expose an "Active" state or
-    // handle the drawing here. The Main loop handles the actual exit.
-    
-    // NOTE: The "Back" button logic is handled in Draw for the UI, 
-    // but the state change relies on the Main loop checking this class or us setting a flag.
-    // For this refactor, we will rely on Draw returning a signal or Main checking a button overlap.
-    // However, to keep it contained:
     
     if (mouseClicked) {
         if (CheckCollisionPointRec(mousePos, btnMedium)) StartGame(DIFF_MEDIUM);
@@ -368,10 +350,6 @@ void MemoryGame::Draw() {
         // Draw Back Button
         DrawRectangleRec(btnBack, LIGHTGRAY); DrawRectangleLinesEx(btnBack, 1, DARKGRAY);
         DrawText("BACK", 45, 28, 10, DARKGRAY);
-        
-        // Note: The click handling for BACK is done in Main.cpp to switch AppState, 
-        // OR we can handle it here and expose a "ExitRequested" flag. 
-        // For simplicity in this architecture, Main.cpp checks this specific button.
     } 
     else if (state == MEM_HELP) {
         DrawText("HOW TO PLAY", SCREEN_WIDTH/2 - MeasureText("HOW TO PLAY", 40)/2, 60, 40, SKYBLUE);

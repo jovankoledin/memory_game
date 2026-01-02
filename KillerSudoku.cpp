@@ -4,7 +4,6 @@
 #include <set>
 #include <cstdio>
 #include <cmath>
-#include "js_interop.h"
 #include <iostream>
 
 // Constants
@@ -34,7 +33,7 @@ void KillerSudokuGame::StartGame(SudokuDifficulty diff) {
     std::random_device rd;
     rng.seed(rd());
 
-    std::cout << "--- START GAME 1: Before Diagonal Fill ---\n"; // Use the provided JsLog or a simple printf
+    std::cout << "--- START GAME 1: Before Diagonal Fill ---\n"; 
 
     // 1. Generate a valid full Sudoku grid
     ClearGrid();
@@ -58,11 +57,11 @@ void KillerSudokuGame::StartGame(SudokuDifficulty diff) {
     }
     
     GenerateFullSolution(0);
-    std::cout << "--- START GAME 3: Before Cage Generation ---\n"; // If the crash happens before this, look at GenerateFullSolution
+    std::cout << "--- START GAME 3: Before Cage Generation ---\n";
 
     // 2. Generate Cages based on the solution
     GenerateCages(diff);
-    std::cout << "--- START GAME 4: Before Final Clear/Setup ---\n"; // If the crash happens here, look at GenerateCages
+    std::cout << "--- START GAME 4: Before Final Clear/Setup ---\n";
 
     // 3. Clear inputs for the player
     for (int i = 0; i < 81; i++) {
@@ -122,7 +121,7 @@ bool KillerSudokuGame::GenerateFullSolution(int index) {
     if (grid[index].value != 0) return GenerateFullSolution(index + 1);
 
     std::vector<int> nums = {1,2,3,4,5,6,7,8,9};
-    std::shuffle(nums.begin(), nums.end(), rng); // <<-- use member rng, NOT a local one
+    std::shuffle(nums.begin(), nums.end(), rng); 
 
     for (int num : nums) {
         if (IsSafe(index, num)) {
@@ -357,9 +356,7 @@ void KillerSudokuGame::Update() {
             if (CheckWinCondition()) {
                 isComplete = true;
                 score = (10000 / (timer + 1)); // Simple score based on time
-
-                // Save result once (High-is-better -> sortOrder = 1)
-                SaveScoreToBrowser(score, 1);
+                // Scoreboard save removed
             }
         }
 
