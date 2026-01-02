@@ -298,6 +298,12 @@ void KillerSudokuGame::GenerateCages(SudokuDifficulty diff)
 
             target->cellIndices.push_back(cell);
             target->targetSum += grid[cell].value;
+
+            availableCells.erase(
+                std::remove(availableCells.begin(), availableCells.end(), startIdx),
+                availableCells.end()
+            );
+
             grid[cell].cageID = bestID;
 
             it = cages.erase(it);
